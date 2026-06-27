@@ -1317,6 +1317,123 @@ class SettingsDialog(QWidget):
 
 
 # =============================================================================
+# RingPreview  —  tiny live-preview of the ring for the wizard
+# =============================================================================
+
+class RingPreview(QWidget):
+    """Miniature ring painter that updates in real-time as settings change."""
+
+    def __init__(
+        self,
+        ring_radius: int = 190,
+        center_radius: int = 58,
+        icon_size: int = 38,
+        accent_color: str = "#0078D4",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self.ring_r = ring_radius
+        self.center_r = center_radius
+        self.icon_sz = icon_size
+        self.accent = accent_color
+        self.setFixedSize(220, 220)
+        self.setStyleSheet("background: transparent;")
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        w, h = self.width(), self.height()
+        cx, cy = w / 2, h / 2
+
+        # Scale factor: fit the ring in the widget
+        margin = 16
+        available = (min(w, h) - margin * 2) / 2
+        scale = available / (self.ring_r + 24) if self.ring_r > 0 else 1.0
+
+        r_outer = self.ring_r * scale
+        r_inner = self.center_r * scale
+        r_icon = (r_outer + r_inner) / 2
+
+        acc = hex_to_qcolor(self.accent)
+
+        # ── soft backdrop ───────────────────────────────────────────
+        halo = QRadialGradient(cx, cy, r_outer + 16)
+        halo.setColorAt(0.0, QColor(15, 15, 20, 50))
+        halo.setColorAt(1.0, QColor(0, 0, 0, 0))
+        painter.setBrush(QBrush(halo))
+        painter.setPen(Qt.NoPen)
+        painter.drawEllipse(QPoint(int(cx), int(cy)), int(r_outer + 16), int(r_outer + 16))
+
+        # ── ring body ───────────────────────────────────────────────
+        ring_grad = QRadialGradient(cx, cy, r_outer)
+        ring_grad.setColorAt(0.0, QColor(50, 50, 58, 235))
+        ring_grad.setColorAt(0.5, QColor(38, 38, 44, 230))
+        ring_grad.setColorAt(1.0, QColor(24, 24, 28, 220))
+        painter.setBrush(QBrush(ring_grad))
+        painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
+        painter.drawEllipse(QPoint(int(cx), int(cy)), int(r_outer), int(r_outer))
+
+        # ── dividers (sample segments) ────────────────────────────
+        n_sample = getattr(self, '_app_count', 6) or 6
+        painter.setPen(QPen(QColor(255, 255, 255, 25), 1))
+        for i in range(n_sample):
+            a = 2.0 * math.pi * i / n_sample - math.pi / 2.0 - math.pi / n_sample
+            ex = int(cx + r_outer * math.cos(a))
+            ey = int(cy + r_outer * math.sin(a))
+            ix = int(cx + r_inner * math.cos(a))
+            iy = int(cy + r_inner * math.sin(a))
+            painter.drawLine(ix, iy, ex, ey)
+
+        # ── centre hub ──────────────────────────────────────────────
+        hub_grad = QRadialGradient(cx, cy, r_inner)
+        hub_grad.setColorAt(0.0, QColor(55, 55, 65, 248))
+        hub_grad.setColorAt(1.0, QColor(38, 38, 45, 242))
+        painter.setBrush(QBrush(hub_grad))
+        painter.setPen(QPen(QColor(255, 255, 255, 18), 1))
+        painter.drawEllipse(QPoint(int(cx), int(cy)), int(r_inner), int(r_inner))
+
+        # Accent dot in centre
+        painter.setBrush(QBrush(acc))
+        painter.setPen(Qt.NoPen)
+        dot_r = max(3, r_inner * 0.35)
+        painter.drawEllipse(QPoint(int(cx), int(cy)), int(dot_r), int(dot_r))
+
+        # ── sample app dots ─────────────────────────────────────────
+        for i in range(n_sample):
+            a = 2.0 * math.pi * i / n_sample - math.pi / 2.0
+            ix = int(cx + r_icon * math.cos(a))
+            iy = int(cy + r_icon * math.sin(a))
+
+            # Tiny coloured dot representing an app icon
+            hue = (i * 360 // n_sample) % 360
+            dot_color = QColor()
+            dot_color.setHsv(hue, 160, 210)
+            painter.setBrush(QBrush(dot_color))
+            painter.setPen(QPen(QColor(0, 0, 0, 60), 1))
+            dot_sz = max(3, self.icon_sz * scale * 0.28)
+            painter.drawRoundedRect(
+                int(ix - dot_sz), int(iy - dot_sz),
+                int(dot_sz * 2), int(dot_sz * 2),
+                3, 3,
+            )
+
+        painter.end()
+
+    def set_params(self, ring_r: int, center_r: int, icon_sz: int, accent: str) -> None:
+        self.ring_r = ring_r
+        self.center_r = center_r
+        self.icon_sz = icon_sz
+        self.accent = accent
+        self.update()
+
+    def set_app_count(self, n: int) -> None:
+        """Store app count for divider rendering (hack: store in instance)."""
+        self._app_count = n
+        self.update()
+
+
+# =============================================================================
 # SetupWizard  —  first-run onboarding
 # =============================================================================
 
@@ -1613,7 +1730,12 @@ class SetupWizard(QDialog):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("QScrollArea { background: #1a1a20; border-radius: 6px; }")
+        scroll.setStyleSheet(
+            "QScrollArea { background: #25252c; border: 1px solid #3a3a44; border-radius: 6px; }"
+            "QScrollBar:vertical { background: #1e1e24; width: 8px; border-radius: 4px; }"
+            "QScrollBar::handle:vertical { background: #555; border-radius: 4px; min-height: 24px; }"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
+        )
         scroll.setMaximumHeight(200)
         self._wiz_app_container = QWidget()
         self._wiz_app_container.setStyleSheet("background: transparent;")
@@ -1635,28 +1757,53 @@ class SetupWizard(QDialog):
         row_w = QWidget()
         row_w.setStyleSheet("background: transparent;")
         row = QHBoxLayout(row_w)
-        row.setContentsMargins(0, 1, 0, 1)
+        row.setContentsMargins(0, 2, 0, 2)
         row.setSpacing(6)
+
+        input_style = (
+            "QLineEdit {"
+            "  background-color: #2d2d35;"
+            "  border: 1px solid #555;"
+            "  border-radius: 4px;"
+            "  padding: 5px 8px;"
+            "  color: #e8e8ec;"
+            "  font-size: 12px;"
+            "}"
+            "QLineEdit:focus {"
+            "  border-color: #0078D4;"
+            "  background-color: #252530;"
+            "}"
+            "QLineEdit::placeholder {"
+            "  color: #777;"
+            "}"
+        )
 
         name_e = QLineEdit(name)
         name_e.setPlaceholderText("应用名称")
         name_e.setMaximumWidth(110)
+        name_e.setStyleSheet(input_style)
         row.addWidget(name_e)
 
         path_e = QLineEdit(path)
-        path_e.setPlaceholderText("程序路径")
+        path_e.setPlaceholderText("程序路径 (.exe / .lnk)")
+        path_e.setStyleSheet(input_style)
         row.addWidget(path_e, stretch=1)
 
         browse = QPushButton("浏览…")
         browse.setMaximumWidth(55)
+        browse.setStyleSheet(
+            "QPushButton { background-color: #3a3a44; border: 1px solid #555; "
+            "border-radius: 4px; padding: 4px 8px; color: #ccc; font-size: 12px; }"
+            "QPushButton:hover { background-color: #4a4a54; }"
+        )
         browse.clicked.connect(lambda checked, pe=path_e: self._browse_wiz_file(pe))
         row.addWidget(browse)
 
         delete = QPushButton("✕")
         delete.setFixedWidth(26)
         delete.setStyleSheet(
-            "QPushButton { background-color: #5a1a1a; border-radius: 3px; "
-            "color: #f88; font-weight: bold; }"
+            "QPushButton { background-color: #5a1a1a; border: 1px solid #7a2a2a; "
+            "border-radius: 3px; color: #ff8888; font-weight: bold; }"
             "QPushButton:hover { background-color: #7a2a2a; }"
         )
         delete.clicked.connect(lambda: self._del_wiz_app(row_w))
@@ -1688,74 +1835,146 @@ class SetupWizard(QDialog):
         page = QWidget()
         page.setStyleSheet("background: transparent;")
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(60, 20, 60, 20)
-        layout.setSpacing(12)
-
-        layout.addStretch()
+        layout.setContentsMargins(40, 16, 40, 16)
+        layout.setSpacing(10)
 
         title = QLabel("外观设置")
         title.setObjectName("titleLabel")
         layout.addWidget(title)
 
-        desc = QLabel("自定义环形菜单的外观，以后随时可以在设置中修改。")
+        desc = QLabel("自定义环形菜单的外观，下方预览会<b>实时更新</b>。")
         desc.setObjectName("descLabel")
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
-        layout.addSpacing(10)
+        # ── Main content: left = preview, right = controls ────────────
+        content = QHBoxLayout()
+        content.setSpacing(20)
+
+        # LEFT — live ring preview
+        preview_container = QFrame()
+        preview_container.setStyleSheet(
+            "QFrame { background-color: #1a1a22; border: 1px solid #3a3a44; border-radius: 10px; }"
+        )
+        preview_layout = QVBoxLayout(preview_container)
+        preview_layout.setContentsMargins(10, 10, 10, 10)
+
+        preview_label = QLabel("实时预览")
+        preview_label.setStyleSheet("color: #888; font-size: 11px; border: none;")
+        preview_label.setAlignment(Qt.AlignCenter)
+        preview_layout.addWidget(preview_label)
+
+        r = self._config_data["ring_radius"]
+        cr = self._config_data["center_radius"]
+        sz = self._config_data["icon_size"]
+        acc = self._config_data["accent_color"]
+        self._ring_preview = RingPreview(r, cr, sz, acc)
+        preview_layout.addWidget(self._ring_preview, alignment=Qt.AlignCenter)
+
+        preview_hint = QLabel("← 调整右侧参数实时查看效果")
+        preview_hint.setStyleSheet("color: #666; font-size: 10px; border: none;")
+        preview_hint.setAlignment(Qt.AlignCenter)
+        preview_layout.addWidget(preview_hint)
+
+        content.addWidget(preview_container)
+
+        # RIGHT — controls
+        controls = QVBoxLayout()
+        controls.setSpacing(12)
 
         # Accent color grid
         color_label = QLabel("主题色:")
         color_label.setStyleSheet("font-weight: bold; color: #ccc;")
-        layout.addWidget(color_label)
+        controls.addWidget(color_label)
 
         color_grid = QGridLayout()
         color_grid.setSpacing(8)
         self._color_btns: List[QPushButton] = []
         for i, (hex_code, cname) in enumerate(self.ACCENT_COLORS):
             btn = QPushButton()
-            btn.setFixedSize(44, 44)
+            btn.setFixedSize(40, 40)
             btn.setToolTip(cname)
+            is_sel = hex_code == self._config_data["accent_color"]
             btn.setStyleSheet(
-                f"QPushButton {{ background-color: {hex_code}; border-radius: 22px; "
-                f"border: 3px solid {'#fff' if hex_code == self._config_data['accent_color'] else 'transparent'}; }}"
+                f"QPushButton {{ background-color: {hex_code}; border-radius: 20px; "
+                f"border: 3px solid {'white' if is_sel else '#444'}; }}"
                 f"QPushButton:hover {{ border-color: #fff; }}"
             )
             btn.clicked.connect(lambda checked, h=hex_code: self._select_color(h))
             color_grid.addWidget(btn, i // 4, i % 4)
             self._color_btns.append(btn)
-        layout.addLayout(color_grid)
+        controls.addLayout(color_grid)
 
-        layout.addSpacing(14)
+        controls.addSpacing(6)
 
-        # Ring size
-        size_row = QHBoxLayout()
-        size_row.setSpacing(16)
-        size_row.addWidget(QLabel("圆环半径:"))
+        # Ring sizes with real-time preview updates
+        size_label = QLabel("圆环尺寸:")
+        size_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        controls.addWidget(size_label)
+
+        def _update_preview():
+            try:
+                rr = int(self._r_edit.text() or "190")
+                cr2 = int(self._cr_edit.text() or "58")
+                sz2 = int(self._icon_edit.text() or "38")
+            except ValueError:
+                return
+            self._config_data["ring_radius"] = rr
+            self._config_data["center_radius"] = cr2
+            self._config_data["icon_size"] = sz2
+            if hasattr(self, '_ring_preview'):
+                self._ring_preview.set_params(rr, cr2, sz2, self._config_data["accent_color"])
+
+        size_grid = QGridLayout()
+        size_grid.setSpacing(8)
+
+        size_grid.addWidget(QLabel("外环半径:"), 0, 0)
         self._r_edit = QLineEdit(str(self._config_data["ring_radius"]))
-        self._r_edit.setMaximumWidth(70)
-        size_row.addWidget(self._r_edit)
-        size_row.addWidget(QLabel("px"))
+        self._r_edit.setMaximumWidth(65)
+        self._r_edit.textChanged.connect(_update_preview)
+        size_grid.addWidget(self._r_edit, 0, 1)
+        size_grid.addWidget(QLabel("px"), 0, 2)
 
-        size_row.addWidget(QLabel("图标大小:"))
+        size_grid.addWidget(QLabel("中心半径:"), 1, 0)
+        self._cr_edit = QLineEdit(str(self._config_data["center_radius"]))
+        self._cr_edit.setMaximumWidth(65)
+        self._cr_edit.textChanged.connect(_update_preview)
+        size_grid.addWidget(self._cr_edit, 1, 1)
+        size_grid.addWidget(QLabel("px"), 1, 2)
+
+        size_grid.addWidget(QLabel("图标大小:"), 2, 0)
         self._icon_edit = QLineEdit(str(self._config_data["icon_size"]))
-        self._icon_edit.setMaximumWidth(70)
-        size_row.addWidget(self._icon_edit)
-        size_row.addWidget(QLabel("px"))
-        size_row.addStretch()
-        layout.addLayout(size_row)
+        self._icon_edit.setMaximumWidth(65)
+        self._icon_edit.textChanged.connect(_update_preview)
+        size_grid.addWidget(self._icon_edit, 2, 1)
+        size_grid.addWidget(QLabel("px"), 2, 2)
 
-        layout.addStretch()
+        controls.addLayout(size_grid)
+        controls.addStretch()
+
+        content.addLayout(controls, stretch=1)
+        layout.addLayout(content)
+
         return page
 
     def _select_color(self, hex_code: str) -> None:
         self._config_data["accent_color"] = hex_code
         for btn, (hc, _) in zip(self._color_btns, self.ACCENT_COLORS):
+            is_sel = hc == hex_code
             btn.setStyleSheet(
-                f"QPushButton {{ background-color: {hc}; border-radius: 22px; "
-                f"border: 3px solid {'#fff' if hc == hex_code else 'transparent'}; }}"
+                f"QPushButton {{ background-color: {hc}; border-radius: 20px; "
+                f"border: 3px solid {'white' if is_sel else '#444'}; }}"
                 f"QPushButton:hover {{ border-color: #fff; }}"
             )
+        # Update live preview
+        if hasattr(self, '_ring_preview'):
+            try:
+                rr = int(self._r_edit.text() or "190")
+                cr2 = int(self._cr_edit.text() or "58")
+                sz2 = int(self._icon_edit.text() or "38")
+            except ValueError:
+                rr, cr2, sz2 = 190, 58, 38
+            self._ring_preview.set_params(rr, cr2, sz2, hex_code)
 
     def _page_done(self) -> QWidget:
         page = QWidget()
@@ -1860,6 +2079,10 @@ class SetupWizard(QDialog):
                 except ValueError:
                     pass
                 try:
+                    self._config_data["center_radius"] = int(self._cr_edit.text() or "58")
+                except ValueError:
+                    pass
+                try:
                     self._config_data["icon_size"] = int(self._icon_edit.text() or "38")
                 except ValueError:
                     pass
@@ -1881,6 +2104,10 @@ class SetupWizard(QDialog):
         # Save appearance
         try:
             self._config_data["ring_radius"] = int(self._r_edit.text() or "190")
+        except ValueError:
+            pass
+        try:
+            self._config_data["center_radius"] = int(self._cr_edit.text() or "58")
         except ValueError:
             pass
         try:

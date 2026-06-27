@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -29,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # ── PyQt5 ────────────────────────────────────────────────────────────────────
 from PyQt5.QtCore import (
     QEasingCurve,
+    QFileInfo,
     QPoint,
     QPropertyAnimation,
     QRect,
@@ -173,15 +175,75 @@ def parse_hotkey(hotkey_str: str) -> Tuple[set, object]:
     return modifiers, main_key
 
 
+def resolve_app_path(app_path: str) -> str:
+    """
+    Resolve a possibly-short app name (e.g. 'notepad.exe') to a full path.
+    Returns the original string if no full path can be found.
+    """
+    # Already a full path?
+    if os.path.isfile(app_path):
+        return os.path.abspath(app_path)
+
+    # Try shutil.which (searches PATH and common locations)
+    resolved = shutil.which(app_path)
+    if resolved and os.path.isfile(resolved):
+        return resolved
+
+    # Try common Windows system directories
+    if sys.platform == "win32":
+        windir = os.environ.get("SystemRoot", "C:\\Windows")
+        candidates = [
+            os.path.join(windir, app_path),
+            os.path.join(windir, "System32", app_path),
+            os.path.join(windir, "SysWOW64", app_path),
+        ]
+        for c in candidates:
+            if os.path.isfile(c):
+                return c
+
+        # Try Program Files
+        for pf in ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432",
+                    "LocalAppData", "AppData"]:
+            base = os.environ.get(pf)
+            if base:
+                c = os.path.join(base, app_path)
+                if os.path.isfile(c):
+                    return c
+
+    return app_path
+
+
 def extract_icon(exe_path: str, size: int = 48) -> QIcon:
-    """Extract the system icon for a .exe file on Windows."""
+    """
+    Extract the system icon for an executable on Windows.
+    Resolves short names to full paths before extraction.
+    Returns an empty QIcon on failure (caller should use fallback).
+    """
+    # Resolve to full path first
+    full_path = resolve_app_path(exe_path)
+
+    # Method 1: QFileIconProvider (works for most .exe / .lnk)
     try:
         provider = QFileIconProvider()
-        icon = provider.icon(QFileInfo(exe_path))
-        if not icon.isNull():
-            return icon
+        info = QFileInfo(full_path)
+        if info.exists():
+            icon = provider.icon(info)
+            if not icon.isNull():
+                return icon
     except Exception:
         pass
+
+    # Method 2: try the original path as fallback
+    if full_path != exe_path:
+        try:
+            info2 = QFileInfo(exe_path)
+            if info2.exists():
+                icon = provider.icon(info2)
+                if not icon.isNull():
+                    return icon
+        except Exception:
+            pass
+
     return QIcon()
 
 
@@ -1227,7 +1289,7 @@ class SettingsDialog(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self, "选择应用程序",
             "C:\\",
-            "可执行文件 (*.exe *.lnk *.bat *.cmd);;所有文件 (*.*)",
+            "EXE 程序 (*.exe);;快捷方式 (*.lnk);;所有文件 (*.*)",
         )
         if path:
             line_edit.setText(path)
@@ -1826,7 +1888,7 @@ class SetupWizard(QDialog):
     def _browse_wiz_file(self, line_edit: QLineEdit) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "选择应用程序", "C:\\",
-            "可执行文件 (*.exe *.lnk *.bat *.cmd);;所有文件 (*.*)",
+            "EXE 程序 (*.exe);;快捷方式 (*.lnk);;所有文件 (*.*)",
         )
         if path:
             line_edit.setText(path)

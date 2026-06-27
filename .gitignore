@@ -24,8 +24,10 @@ Desktop.ini
 # Build outputs
 build/
 dist/
-*.spec
 *.exe
+*.ico
+__pycache__/
+*.pyc
 
 # Config is user-specific — auto-generated on first run
 config.json

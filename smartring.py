@@ -56,6 +56,7 @@ from PyQt5.QtWidgets import (
     QAction,
     QApplication,
     QColorDialog,
+    QDialog,
     QFileDialog,
     QFileIconProvider,
     QFrame,
@@ -68,6 +69,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
@@ -112,9 +114,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 def config_path() -> str:
     """Path to config.json — always next to the script / exe."""
-    return os.path.join(
-        os.path.dirname(os.path.abspath(sys.argv[0])), CONFIG_FILENAME
-    )
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller bundle — use the exe directory
+        base = os.path.dirname(os.path.abspath(sys.executable))
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, CONFIG_FILENAME)
 
 
 def parse_hotkey(hotkey_str: str) -> Tuple[set, object]:
@@ -195,6 +200,163 @@ def hex_to_qcolor(hex_str: str, alpha: int = 255) -> QColor:
 def qcolor_to_hex(c: QColor) -> str:
     """Convert QColor to '#RRGGBB'."""
     return f"#{c.red():02X}{c.green():02X}{c.blue():02X}"
+
+
+# =============================================================================
+# KeyCaptureLineEdit  —  capture real keystrokes for hotkey config
+# =============================================================================
+
+class KeyCaptureLineEdit(QLineEdit):
+    """
+    A line-edit that captures an actual key combination when focused.
+    Click / focus → shows hint → press your hotkey → displays friendly name.
+    """
+
+    MOD_NAMES = {
+        Key.ctrl: "Ctrl", Key.ctrl_l: "Ctrl", Key.ctrl_r: "Ctrl",
+        Key.alt: "Alt", Key.alt_l: "Alt", Key.alt_r: "Alt",
+        Key.shift: "Shift", Key.shift_l: "Shift", Key.shift_r: "Shift",
+        Key.cmd: "Win", Key.cmd_l: "Win", Key.cmd_r: "Win",
+    }
+
+    KEY_NAMES = {
+        Key.space: "Space", Key.enter: "Enter", Key.tab: "Tab",
+        Key.esc: "Esc", Key.backspace: "Backspace", Key.delete: "Delete",
+        Key.insert: "Insert", Key.home: "Home", Key.end: "End",
+        Key.page_up: "PageUp", Key.page_down: "PageDown",
+        Key.up: "Up", Key.down: "Down", Key.left: "Left", Key.right: "Right",
+        Key.print_screen: "PrintScreen", Key.scroll_lock: "ScrollLock",
+        Key.pause: "Pause", Key.caps_lock: "CapsLock",
+    }
+    for i in range(1, 13):
+        KEY_NAMES[getattr(Key, f"f{i}")] = f"F{i}"
+
+    key_captured = pyqtSignal(str)   # emits the hotkey string like "ctrl+f12"
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._mods: set = set()
+        self._main_key = None
+        self._capturing = False
+        self.setReadOnly(True)
+        self.setPlaceholderText("点击此处，然后按下快捷键…")
+        self.setStyleSheet(
+            "QLineEdit { background-color: #1a1a20; border: 2px dashed #555; "
+            "border-radius: 6px; padding: 10px 14px; color: #aaa; font-size: 15px; }"
+            "QLineEdit:focus { border-color: #0078D4; color: #e0e0e0; }"
+        )
+        self._listener: Optional[pynput_keyboard.Listener] = None
+
+    def mousePressEvent(self, event) -> None:
+        if not self._capturing:
+            self._start_capture()
+        super().mousePressEvent(event)
+
+    def focusInEvent(self, event) -> None:
+        if not self._capturing:
+            self._start_capture()
+        super().focusInEvent(event)
+
+    def focusOutEvent(self, event) -> None:
+        self._stop_capture()
+        super().focusOutEvent(event)
+
+    def _start_capture(self) -> None:
+        self._capturing = True
+        self._mods.clear()
+        self._main_key = None
+        self.setText("…")
+        self.setStyleSheet(
+            "QLineEdit { background-color: #0d1a2d; border: 2px solid #0078D4; "
+            "border-radius: 6px; padding: 10px 14px; color: #4af; font-size: 15px; }"
+        )
+        try:
+            self._listener = pynput_keyboard.Listener(
+                on_press=self._on_key_press,
+            )
+            self._listener.start()
+        except Exception:
+            pass
+
+    def _stop_capture(self) -> None:
+        self._capturing = False
+        try:
+            if self._listener:
+                self._listener.stop()
+                self._listener = None
+        except Exception:
+            pass
+        self.setStyleSheet(
+            "QLineEdit { background-color: #1a1a20; border: 2px dashed #555; "
+            "border-radius: 6px; padding: 10px 14px; color: #aaa; font-size: 15px; }"
+            "QLineEdit:focus { border-color: #0078D4; color: #e0e0e0; }"
+        )
+
+    def _on_key_press(self, key) -> None:
+        if not self._capturing:
+            return
+
+        # Track modifiers
+        if key in (Key.ctrl_l, Key.ctrl_r):
+            self._mods.add(Key.ctrl)
+        elif key in (Key.alt_l, Key.alt_r):
+            self._mods.add(Key.alt)
+        elif key in (Key.shift_l, Key.shift_r):
+            self._mods.add(Key.shift)
+        elif key in (Key.cmd_l, Key.cmd_r):
+            self._mods.add(Key.cmd)
+        else:
+            self._main_key = key
+            self._build_result()
+
+    def _build_result(self) -> None:
+        if self._main_key is None:
+            return
+
+        parts = []
+        # Modifiers sorted consistently
+        for mod in sorted(self._mods, key=lambda k: str(k)):
+            if mod in self.MOD_NAMES:
+                parts.append(self.MOD_NAMES[mod])
+
+        if self._main_key in self.KEY_NAMES:
+            parts.append(self.KEY_NAMES[self._main_key])
+        elif hasattr(self._main_key, 'char') and self._main_key.char:
+            parts.append(self._main_key.char.upper())
+        else:
+            parts.append(str(self._main_key).replace("Key.", ""))
+
+        hotkey_str = "+".join(parts)
+        hotkey_cfg = "+".join(p.lower() for p in parts)
+
+        self.setText(hotkey_str)
+        self.key_captured.emit(hotkey_cfg)
+        self._stop_capture()
+
+    def set_hotkey(self, cfg_string: str) -> None:
+        """Set from config string like 'ctrl+f12'."""
+        # Reverse the parse to get a friendly display string
+        parts = cfg_string.lower().split("+")
+        display = "+".join(p.capitalize() if len(p) > 1 else p.upper() for p in parts)
+        # Better: map known keys
+        friendly = []
+        for p in parts:
+            p = p.strip()
+            if p in ("ctrl", "control"):
+                friendly.append("Ctrl")
+            elif p in ("alt", "menu"):
+                friendly.append("Alt")
+            elif p in ("shift",):
+                friendly.append("Shift")
+            elif p in ("win", "cmd", "windows"):
+                friendly.append("Win")
+            elif p.startswith("f") and p[1:].isdigit():
+                friendly.append(p.upper())
+            elif len(p) == 1:
+                friendly.append(p.upper())
+            else:
+                friendly.append(p.capitalize())
+        self.setText("+".join(friendly))
 
 
 # =============================================================================
@@ -1155,6 +1317,608 @@ class SettingsDialog(QWidget):
 
 
 # =============================================================================
+# SetupWizard  —  first-run onboarding
+# =============================================================================
+
+class SetupWizard(QDialog):
+    """
+    Multi-page setup wizard shown on first launch.
+    Guides the user through: hotkey → apps → appearance → done.
+    """
+
+    ACCENT_COLORS = [
+        ("#0078D4", "Windows 蓝"),
+        ("#E74856", "珊瑚红"),
+        ("#009B5A", "翠绿"),
+        ("#F7630C", "活力橙"),
+        ("#886CE4", "紫罗兰"),
+        ("#00B7C3", "青碧"),
+        ("#FFB900", "金黄"),
+        ("#D448C3", "品红"),
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._config_data = dict(DEFAULT_CONFIG)
+        self._current_page = 0
+        self._setup_ui()
+        self.setWindowTitle(f"{APP_NAME} — 初始设置")
+        self.setMinimumSize(620, 480)
+        self.resize(660, 500)
+        self.setModal(True)
+
+    def _setup_ui(self) -> None:
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1e1e24;
+                color: #d0d0d5;
+                font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
+            }
+            QLabel#stepLabel {
+                color: #888;
+                font-size: 12px;
+            }
+            QLabel#stepLabelActive {
+                color: #0078D4;
+                font-size: 12px;
+                font-weight: bold;
+            }
+            QLabel#titleLabel {
+                font-size: 20px;
+                font-weight: bold;
+                color: #e8e8ec;
+            }
+            QLabel#descLabel {
+                font-size: 13px;
+                color: #999;
+                line-height: 1.5;
+            }
+        """)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setSpacing(0)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+
+        # ── Step indicator bar ──────────────────────────────────────────
+        self._step_labels: List[QLabel] = []
+        step_bar = QHBoxLayout()
+        step_bar.setSpacing(0)
+        step_bar.setContentsMargins(40, 18, 40, 10)
+
+        step_names = ["欢迎", "快捷键", "应用", "外观", "完成"]
+        for i, name in enumerate(step_names):
+            if i > 0:
+                sep = QLabel("  ▸  ")
+                sep.setStyleSheet("color: #555; font-size: 12px;")
+                step_bar.addWidget(sep)
+            lbl = QLabel(name)
+            lbl.setObjectName("stepLabel")
+            step_bar.addWidget(lbl)
+            self._step_labels.append(lbl)
+        step_bar.addStretch()
+        main_layout.addLayout(step_bar)
+
+        # Divider
+        div = QFrame()
+        div.setFrameShape(QFrame.HLine)
+        div.setStyleSheet("QFrame { color: #333; }")
+        main_layout.addWidget(div)
+
+        # ── Page stack ──────────────────────────────────────────────────
+        self._stack = QStackedWidget()
+        self._stack.setStyleSheet("QStackedWidget { background: transparent; }")
+
+        self._stack.addWidget(self._page_welcome())
+        self._stack.addWidget(self._page_hotkey())
+        self._stack.addWidget(self._page_apps())
+        self._stack.addWidget(self._page_appearance())
+        self._stack.addWidget(self._page_done())
+
+        main_layout.addWidget(self._stack, stretch=1)
+
+        # ── Bottom nav bar ──────────────────────────────────────────────
+        nav = QHBoxLayout()
+        nav.setContentsMargins(40, 12, 40, 20)
+        nav.setSpacing(12)
+
+        self._back_btn = QPushButton("← 上一步")
+        self._back_btn.setMinimumWidth(90)
+        self._back_btn.clicked.connect(self._go_back)
+        self._back_btn.setVisible(False)
+        nav.addWidget(self._back_btn)
+
+        nav.addStretch()
+
+        self._next_btn = QPushButton("下一步 →")
+        self._next_btn.setMinimumWidth(110)
+        self._next_btn.setDefault(True)
+        self._next_btn.clicked.connect(self._go_next)
+        nav.addWidget(self._next_btn)
+
+        self._finish_btn = QPushButton("🎯 开始使用 SmartRing")
+        self._finish_btn.setMinimumWidth(180)
+        self._finish_btn.setVisible(False)
+        self._finish_btn.clicked.connect(self._finish)
+        nav.addWidget(self._finish_btn)
+
+        main_layout.addLayout(nav)
+
+        # Style navigation buttons
+        btn_style = """
+            QPushButton {
+                background-color: #0078D4; color: white;
+                border-radius: 6px; padding: 8px 20px;
+                font-weight: bold; font-size: 13px;
+            }
+            QPushButton:hover { background-color: #1084d8; }
+            QPushButton:disabled { background-color: #444; color: #888; }
+        """
+        self._next_btn.setStyleSheet(btn_style)
+        self._finish_btn.setStyleSheet(btn_style)
+        self._back_btn.setStyleSheet(
+            "QPushButton { background-color: #3a3a42; color: #ccc; "
+            "border-radius: 6px; padding: 8px 20px; font-size: 13px; }"
+            "QPushButton:hover { background-color: #4a4a52; }"
+        )
+
+        self._update_step()
+
+    # ── Page builders ──────────────────────────────────────────────────
+
+    def _page_welcome(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(60, 30, 60, 30)
+        layout.setSpacing(14)
+
+        layout.addStretch()
+
+        # Logo area — big ring icon
+        logo = QLabel()
+        logo.setFixedSize(100, 100)
+        logo.setAlignment(Qt.AlignCenter)
+        logo.setPixmap(self._make_logo(100))
+        layout.addWidget(logo, alignment=Qt.AlignCenter)
+
+        title = QLabel("欢迎使用 SmartRing")
+        title.setObjectName("titleLabel")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        desc = QLabel(
+            "SmartRing 是受罗技 Action Ring 启发的环形应用启动器。<br><br>"
+            "<b>按下快捷键</b> → 光标周围弹出环形菜单 → <b>移动鼠标选择应用</b> → 松开即启动<br><br>"
+            "接下来几步将帮助您完成初始设置。"
+        )
+        desc.setObjectName("descLabel")
+        desc.setWordWrap(True)
+        desc.setAlignment(Qt.AlignCenter)
+        layout.addWidget(desc)
+
+        layout.addStretch()
+        return page
+
+    def _page_hotkey(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(60, 20, 60, 20)
+        layout.setSpacing(12)
+
+        layout.addStretch()
+
+        title = QLabel("设置快捷键")
+        title.setObjectName("titleLabel")
+        layout.addWidget(title)
+
+        desc = QLabel("点击下方输入框，然后按下你想要的快捷键组合（例如 F12 或 Ctrl+F12）")
+        desc.setObjectName("descLabel")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        layout.addSpacing(10)
+
+        self._hk_capture = KeyCaptureLineEdit()
+        self._hk_capture.setFixedHeight(48)
+        self._hk_capture.set_hotkey(self._config_data["hotkey"])
+        self._hk_capture.key_captured.connect(self._on_hk_captured)
+        layout.addWidget(self._hk_capture)
+
+        layout.addSpacing(16)
+
+        # Mode selection
+        mode_label = QLabel("触发模式:")
+        mode_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        layout.addWidget(mode_label)
+
+        mode_row = QHBoxLayout()
+        mode_row.setSpacing(16)
+
+        self._mode_hold = QPushButton("🖐 Hold 模式\n按住唤出，松开启动")
+        self._mode_hold.setCheckable(True)
+        self._mode_hold.setChecked(True)
+        self._mode_hold.setMinimumHeight(56)
+        self._mode_hold.clicked.connect(lambda: self._select_mode("hold"))
+        mode_row.addWidget(self._mode_hold)
+
+        self._mode_toggle = QPushButton("🔘 Toggle 模式\n按一下显示，再按隐藏")
+        self._mode_toggle.setCheckable(True)
+        self._mode_toggle.setMinimumHeight(56)
+        self._mode_toggle.clicked.connect(lambda: self._select_mode("toggle"))
+        mode_row.addWidget(self._mode_toggle)
+
+        layout.addLayout(mode_row)
+        self._update_mode_style()
+
+        layout.addStretch()
+        return page
+
+    def _select_mode(self, mode: str) -> None:
+        self._config_data["mode"] = mode
+        self._mode_hold.setChecked(mode == "hold")
+        self._mode_toggle.setChecked(mode == "toggle")
+        self._update_mode_style()
+
+    def _update_mode_style(self) -> None:
+        mode = self._config_data["mode"]
+        sel = (
+            "QPushButton { background-color: #0d2a45; border: 2px solid #0078D4; "
+            "border-radius: 8px; color: white; font-size: 12px; padding: 8px; }"
+        )
+        unsel = (
+            "QPushButton { background-color: #2a2a32; border: 2px solid #444; "
+            "border-radius: 8px; color: #999; font-size: 12px; padding: 8px; }"
+            "QPushButton:hover { border-color: #666; color: #ccc; }"
+        )
+        self._mode_hold.setStyleSheet(sel if mode == "hold" else unsel)
+        self._mode_toggle.setStyleSheet(sel if mode == "toggle" else unsel)
+
+    def _on_hk_captured(self, hotkey_str: str) -> None:
+        self._config_data["hotkey"] = hotkey_str
+
+    def _page_apps(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(40, 16, 40, 16)
+        layout.setSpacing(8)
+
+        title = QLabel("配置应用列表")
+        title.setObjectName("titleLabel")
+        layout.addWidget(title)
+
+        desc = QLabel("添加你常用的应用程序，启动时可从环形菜单中选择。")
+        desc.setObjectName("descLabel")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        # App table header
+        hdr = QHBoxLayout()
+        hdr.addWidget(QLabel("名称"))
+        hdr.itemAt(0).widget().setMinimumWidth(100)
+        hdr.addWidget(QLabel("路径"))
+        hdr.addStretch()
+        add_btn = QPushButton("＋ 添加应用")
+        add_btn.setStyleSheet(
+            "QPushButton { background-color: #1a6d34; color: white; "
+            "border-radius: 4px; padding: 5px 12px; }"
+            "QPushButton:hover { background-color: #228b41; }"
+        )
+        add_btn.clicked.connect(lambda: self._add_wiz_app())
+        hdr.addWidget(add_btn)
+        layout.addLayout(hdr)
+
+        # Scrollable app rows
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: #1a1a20; border-radius: 6px; }")
+        scroll.setMaximumHeight(200)
+        self._wiz_app_container = QWidget()
+        self._wiz_app_container.setStyleSheet("background: transparent;")
+        self._wiz_app_layout = QVBoxLayout(self._wiz_app_container)
+        self._wiz_app_layout.setSpacing(3)
+        self._wiz_app_layout.setContentsMargins(6, 6, 6, 6)
+        self._wiz_app_layout.addStretch()
+        scroll.setWidget(self._wiz_app_container)
+        layout.addWidget(scroll)
+
+        # Pre-fill with defaults
+        self._wiz_app_rows: List[Tuple[QLineEdit, QLineEdit]] = []
+        for app in self._config_data["apps"]:
+            self._add_wiz_app(app["name"], app["path"])
+
+        return page
+
+    def _add_wiz_app(self, name: str = "", path: str = "") -> None:
+        row_w = QWidget()
+        row_w.setStyleSheet("background: transparent;")
+        row = QHBoxLayout(row_w)
+        row.setContentsMargins(0, 1, 0, 1)
+        row.setSpacing(6)
+
+        name_e = QLineEdit(name)
+        name_e.setPlaceholderText("应用名称")
+        name_e.setMaximumWidth(110)
+        row.addWidget(name_e)
+
+        path_e = QLineEdit(path)
+        path_e.setPlaceholderText("程序路径")
+        row.addWidget(path_e, stretch=1)
+
+        browse = QPushButton("浏览…")
+        browse.setMaximumWidth(55)
+        browse.clicked.connect(lambda checked, pe=path_e: self._browse_wiz_file(pe))
+        row.addWidget(browse)
+
+        delete = QPushButton("✕")
+        delete.setFixedWidth(26)
+        delete.setStyleSheet(
+            "QPushButton { background-color: #5a1a1a; border-radius: 3px; "
+            "color: #f88; font-weight: bold; }"
+            "QPushButton:hover { background-color: #7a2a2a; }"
+        )
+        delete.clicked.connect(lambda: self._del_wiz_app(row_w))
+        row.addWidget(delete)
+
+        self._wiz_app_layout.insertWidget(self._wiz_app_layout.count() - 1, row_w)
+        self._wiz_app_rows.append((name_e, path_e))
+
+    def _del_wiz_app(self, row_w: QWidget) -> None:
+        layout = row_w.layout()
+        if layout:
+            name_e = layout.itemAt(0).widget()
+            for i, (ne, pe) in enumerate(self._wiz_app_rows):
+                if ne is name_e:
+                    self._wiz_app_rows.pop(i)
+                    break
+        self._wiz_app_layout.removeWidget(row_w)
+        row_w.deleteLater()
+
+    def _browse_wiz_file(self, line_edit: QLineEdit) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择应用程序", "C:\\",
+            "可执行文件 (*.exe *.lnk *.bat *.cmd);;所有文件 (*.*)",
+        )
+        if path:
+            line_edit.setText(path)
+
+    def _page_appearance(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(60, 20, 60, 20)
+        layout.setSpacing(12)
+
+        layout.addStretch()
+
+        title = QLabel("外观设置")
+        title.setObjectName("titleLabel")
+        layout.addWidget(title)
+
+        desc = QLabel("自定义环形菜单的外观，以后随时可以在设置中修改。")
+        desc.setObjectName("descLabel")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        layout.addSpacing(10)
+
+        # Accent color grid
+        color_label = QLabel("主题色:")
+        color_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        layout.addWidget(color_label)
+
+        color_grid = QGridLayout()
+        color_grid.setSpacing(8)
+        self._color_btns: List[QPushButton] = []
+        for i, (hex_code, cname) in enumerate(self.ACCENT_COLORS):
+            btn = QPushButton()
+            btn.setFixedSize(44, 44)
+            btn.setToolTip(cname)
+            btn.setStyleSheet(
+                f"QPushButton {{ background-color: {hex_code}; border-radius: 22px; "
+                f"border: 3px solid {'#fff' if hex_code == self._config_data['accent_color'] else 'transparent'}; }}"
+                f"QPushButton:hover {{ border-color: #fff; }}"
+            )
+            btn.clicked.connect(lambda checked, h=hex_code: self._select_color(h))
+            color_grid.addWidget(btn, i // 4, i % 4)
+            self._color_btns.append(btn)
+        layout.addLayout(color_grid)
+
+        layout.addSpacing(14)
+
+        # Ring size
+        size_row = QHBoxLayout()
+        size_row.setSpacing(16)
+        size_row.addWidget(QLabel("圆环半径:"))
+        self._r_edit = QLineEdit(str(self._config_data["ring_radius"]))
+        self._r_edit.setMaximumWidth(70)
+        size_row.addWidget(self._r_edit)
+        size_row.addWidget(QLabel("px"))
+
+        size_row.addWidget(QLabel("图标大小:"))
+        self._icon_edit = QLineEdit(str(self._config_data["icon_size"]))
+        self._icon_edit.setMaximumWidth(70)
+        size_row.addWidget(self._icon_edit)
+        size_row.addWidget(QLabel("px"))
+        size_row.addStretch()
+        layout.addLayout(size_row)
+
+        layout.addStretch()
+        return page
+
+    def _select_color(self, hex_code: str) -> None:
+        self._config_data["accent_color"] = hex_code
+        for btn, (hc, _) in zip(self._color_btns, self.ACCENT_COLORS):
+            btn.setStyleSheet(
+                f"QPushButton {{ background-color: {hc}; border-radius: 22px; "
+                f"border: 3px solid {'#fff' if hc == hex_code else 'transparent'}; }}"
+                f"QPushButton:hover {{ border-color: #fff; }}"
+            )
+
+    def _page_done(self) -> QWidget:
+        page = QWidget()
+        page.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(60, 30, 60, 30)
+        layout.setSpacing(12)
+
+        layout.addStretch()
+
+        check = QLabel("✓")
+        check.setStyleSheet("font-size: 48px; color: #009B5A;")
+        check.setAlignment(Qt.AlignCenter)
+        layout.addWidget(check)
+
+        title = QLabel("设置完成！")
+        title.setObjectName("titleLabel")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        # Summary
+        summary = (
+            f"<p style='color:#ccc;'>"
+            f"快捷键: <b style='color:#4af;'>{self._config_data['hotkey'].upper()}</b><br>"
+            f"模式: <b>{'Hold (按住)' if self._config_data['mode'] == 'hold' else 'Toggle (切换)'}</b><br>"
+            f"应用数量: <b>{len(self._wiz_app_rows)}</b> 个<br>"
+            f"主题色: <span style='color:{self._config_data['accent_color']};'>●</span> {self._config_data['accent_color']}"
+            f"</p>"
+        )
+        self._summary_label = QLabel(summary)
+        self._summary_label.setWordWrap(True)
+        self._summary_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(self._summary_label)
+
+        tip = QLabel(
+            "SmartRing 将在系统托盘中运行。<br>"
+            "按下你设置的快捷键即可唤出环形菜单。<br>"
+            "右键托盘图标可随时修改设置。"
+        )
+        tip.setObjectName("descLabel")
+        tip.setWordWrap(True)
+        tip.setAlignment(Qt.AlignCenter)
+        layout.addWidget(tip)
+
+        layout.addStretch()
+        return page
+
+    # ── Navigation ─────────────────────────────────────────────────────
+
+    def _update_step(self) -> None:
+        for i, lbl in enumerate(self._step_labels):
+            if i == self._current_page:
+                lbl.setObjectName("stepLabelActive")
+            else:
+                lbl.setObjectName("stepLabel")
+            lbl.style().unpolish(lbl)
+            lbl.style().polish(lbl)
+
+        self._stack.setCurrentIndex(self._current_page)
+        self._back_btn.setVisible(self._current_page > 0)
+        self._next_btn.setVisible(self._current_page < 4)
+        self._finish_btn.setVisible(self._current_page == 4)
+
+        # Update next button text
+        if self._current_page == 3:
+            self._next_btn.setText("查看完成 →")
+        else:
+            self._next_btn.setText("下一步 →")
+
+        # Update summary on done page
+        if self._current_page == 4 and hasattr(self, '_summary_label'):
+            summary = (
+                f"<p style='color:#ccc;'>"
+                f"快捷键: <b style='color:#4af;'>{self._config_data['hotkey'].upper()}</b><br>"
+                f"模式: <b>{'Hold (按住唤出)' if self._config_data['mode'] == 'hold' else 'Toggle (切换)'}</b><br>"
+                f"应用数量: <b>{len(self._wiz_app_rows)}</b> 个<br>"
+                f"主题色: <span style='color:{self._config_data['accent_color']};'>●</span> {self._config_data['accent_color']}"
+                f"</p>"
+            )
+            self._summary_label.setText(summary)
+
+    def _go_back(self) -> None:
+        if self._current_page > 0:
+            self._current_page -= 1
+            self._update_step()
+
+    def _go_next(self) -> None:
+        if self._current_page < 4:
+            # Save current page data before moving
+            if self._current_page == 2:  # apps page
+                apps = []
+                for name_e, path_e in self._wiz_app_rows:
+                    n = name_e.text().strip()
+                    p = path_e.text().strip()
+                    if n and p:
+                        apps.append({"name": n, "path": p, "args": "", "icon": ""})
+                if apps:
+                    self._config_data["apps"] = apps
+            elif self._current_page == 3:  # appearance page
+                try:
+                    self._config_data["ring_radius"] = int(self._r_edit.text() or "190")
+                except ValueError:
+                    pass
+                try:
+                    self._config_data["icon_size"] = int(self._icon_edit.text() or "38")
+                except ValueError:
+                    pass
+
+            self._current_page += 1
+            self._update_step()
+
+    def _finish(self) -> None:
+        # Save apps
+        apps = []
+        for name_e, path_e in self._wiz_app_rows:
+            n = name_e.text().strip()
+            p = path_e.text().strip()
+            if n and p:
+                apps.append({"name": n, "path": p, "args": "", "icon": ""})
+        if apps:
+            self._config_data["apps"] = apps
+
+        # Save appearance
+        try:
+            self._config_data["ring_radius"] = int(self._r_edit.text() or "190")
+        except ValueError:
+            pass
+        try:
+            self._config_data["icon_size"] = int(self._icon_edit.text() or "38")
+        except ValueError:
+            pass
+
+        # Write config.json
+        cfg_path = config_path()
+        try:
+            with open(cfg_path, "w", encoding="utf-8") as fh:
+                json.dump(self._config_data, fh, indent=2, ensure_ascii=False)
+        except OSError:
+            QMessageBox.warning(self, "错误", "无法保存配置文件，请检查磁盘权限。")
+            return
+
+        self.accept()
+
+    def _make_logo(self, size: int) -> QPixmap:
+        pix = QPixmap(size, size)
+        pix.fill(Qt.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.Antialiasing)
+        # Outer ring
+        p.setBrush(QBrush(QColor(40, 40, 48)))
+        p.setPen(QPen(QColor("#0078D4"), size * 0.06))
+        r = size * 0.42
+        cx, cy = size / 2, size / 2
+        p.drawEllipse(QPoint(int(cx), int(cy)), int(r), int(r))
+        # Inner dot
+        p.setBrush(QBrush(QColor("#0078D4")))
+        p.setPen(Qt.NoPen)
+        p.drawEllipse(QPoint(int(cx), int(cy)), int(r * 0.38), int(r * 0.38))
+        p.end()
+        return pix
+
+
+# =============================================================================
 # SmartRingApp  —  main application controller
 # =============================================================================
 
@@ -1450,7 +2214,30 @@ class SmartRingApp(QObject):
 # Entry point
 # =============================================================================
 
+def _check_single_instance() -> bool:
+    """Return True if this is the only instance; False if already running."""
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        mutex_name = f"Global\\{APP_NAME}_SingleInstance"
+        handle = ctypes.windll.kernel32.CreateMutexW(None, True, mutex_name)
+        if handle == 0:
+            return True  # can't check, assume ok
+        last_error = ctypes.windll.kernel32.GetLastError()
+        if last_error == 183:  # ERROR_ALREADY_EXISTS
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return False
+        # Keep the mutex alive by not closing it; it's released on process exit
+        return True
+    except Exception:
+        return True  # if mutex check fails, allow launching
+
+
 def main() -> int:
+    # High-DPI
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
@@ -1461,7 +2248,23 @@ def main() -> int:
         import ctypes
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_NAME)
 
-    cfg = ConfigManager(config_path())
+    # ── Single-instance check ──────────────────────────────────────────
+    if not _check_single_instance():
+        QMessageBox.information(
+            None, APP_NAME,
+            "SmartRing 已在运行中。\n\n请查看系统托盘中的 SmartRing 图标。",
+        )
+        return 0
+
+    # ── First-run wizard ───────────────────────────────────────────────
+    cfg_path = config_path()
+    if not os.path.exists(cfg_path):
+        wizard = SetupWizard()
+        if wizard.exec_() != QDialog.Accepted:
+            return 0  # user cancelled setup
+
+    # ── Normal launch ──────────────────────────────────────────────────
+    cfg = ConfigManager(cfg_path)
     smartring = SmartRingApp(cfg)
 
     return app.exec_()

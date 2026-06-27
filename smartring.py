@@ -941,45 +941,71 @@ class RingOverlay(QWidget):
         for i in range(n):
             is_hi = i == hi
 
-            # Icon
+            # ── Icon ────────────────────────────────────────────────
             ipos = self._app_position(i, icon_r)
             pix = self._app_icon_pixmap(i)
             if not pix.isNull():
                 pw, ph = pix.width(), pix.height()
-                offset_x, offset_y = pw // 2, ph // 2
-                # Slightly scale up highlighted icon
-                scale = 1.08 if is_hi else 1.0
-                if scale != 1.0:
+
+                if is_hi:
+                    # Highlighted: full brightness, slightly enlarged + glow ring
+                    scale = 1.15
                     sw, sh = int(pw * scale), int(ph * scale)
                     scaled = pix.scaled(sw, sh, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                    # Soft glow behind highlighted icon
+                    glow = QRadialGradient(ipos.x(), ipos.y(), int(max(sw, sh) * 0.7))
+                    glow.setColorAt(0.0, QColor(acc.red(), acc.green(), acc.blue(), 90))
+                    glow.setColorAt(1.0, QColor(acc.red(), acc.green(), acc.blue(), 0))
+                    painter.setBrush(QBrush(glow))
+                    painter.setPen(Qt.NoPen)
+                    painter.drawEllipse(ipos, int(max(sw, sh) * 0.7), int(max(sw, sh) * 0.7))
                     painter.drawPixmap(
                         ipos.x() - sw // 2, ipos.y() - sh // 2, sw, sh, scaled,
                     )
                 else:
-                    painter.drawPixmap(
-                        ipos.x() - offset_x, ipos.y() - offset_y, pw, ph, pix,
-                    )
+                    # Non-highlighted: dimmed + slightly smaller
+                    painter.setOpacity(0.35)
+                    scale = 0.92
+                    sw, sh = int(pw * scale), int(ph * scale)
+                    if sw > 0 and sh > 0:
+                        scaled = pix.scaled(sw, sh, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                        painter.drawPixmap(
+                            ipos.x() - sw // 2, ipos.y() - sh // 2, sw, sh, scaled,
+                        )
+                    painter.setOpacity(1.0)
 
-            # Label
+            # ── Label ────────────────────────────────────────────────
             lpos = self._app_position(i, label_r)
             name = self._apps[i]["name"]
 
-            label_font = QFont("Microsoft YaHei", 9, QFont.Bold if is_hi else QFont.Normal)
-            painter.setFont(label_font)
-            fm = QFontMetrics(label_font)
-            text_w = fm.horizontalAdvance(name)
-            th = fm.height()
-
             if is_hi:
-                # Label background pill
-                pill_w, pill_h = text_w + 14, th + 5
+                # Highlighted: bold + accent pill background + bright text
+                label_font = QFont("Microsoft YaHei", 10, QFont.Bold)
+                painter.setFont(label_font)
+                fm = QFontMetrics(label_font)
+                text_w = fm.horizontalAdvance(name)
+                th = fm.height()
+
+                pill_w, pill_h = text_w + 18, th + 6
                 pill_rect = QRect(lpos.x() - pill_w // 2, lpos.y() - pill_h // 2, pill_w, pill_h)
                 painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 200)))
-                painter.drawRoundedRect(pill_rect, 8, 8)
+                painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 220)))
+                painter.drawRoundedRect(pill_rect, 10, 10)
+
+                # Subtle outer border on pill
+                painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 120), 1.5))
+                painter.setBrush(Qt.NoBrush)
+                painter.drawRoundedRect(pill_rect, 10, 10)
+
                 painter.setPen(QColor(255, 255, 255))
             else:
-                painter.setPen(QColor(210, 210, 215))
+                # Non-highlighted: thin font, dimmed colour
+                label_font = QFont("Microsoft YaHei", 8, QFont.Normal)
+                painter.setFont(label_font)
+                fm = QFontMetrics(label_font)
+                text_w = fm.horizontalAdvance(name)
+                th = fm.height()
+                painter.setPen(QColor(120, 120, 130))
 
             painter.drawText(
                 QRect(lpos.x() - text_w // 2, lpos.y() - th // 2, text_w, th),

@@ -872,7 +872,6 @@ class RingOverlay(QWidget):
             return
 
         acc = self._accent
-        acc_light = QColor(acc.red(), acc.green(), acc.blue(), 120)
 
         # ── 1. Outer soft halo ───────────────────────────────────────
         halo = QRadialGradient(cx, cy, self._ring_r + 80)
@@ -916,39 +915,18 @@ class RingOverlay(QWidget):
             angle_start = angle_center - seg_angle / 2.0
             angle_span = seg_angle
 
-            # Highlight glow (larger, softer)
-            glow_wedge = QPainterPath()
-            glow_wedge.moveTo(cx, cy)
-            glow_wedge.arcTo(
+            # Wedge for the selected segment
+            wedge = QPainterPath()
+            wedge.moveTo(cx, cy)
+            wedge.arcTo(
                 cx - self._ring_r, cy - self._ring_r,
                 self._ring_r * 2, self._ring_r * 2,
                 int(-math.degrees(angle_start) * 16),
                 int(-math.degrees(angle_span) * 16),
             )
-            glow_wedge.closeSubpath()
-            highlight_area = glow_wedge.intersected(ring_body).subtracted(hub)
-
-            # Fill the highlighted segment with accent colour
+            wedge.closeSubpath()
+            highlight_area = wedge.intersected(ring_body).subtracted(hub)
             painter.fillPath(highlight_area, QBrush(QColor(acc.red(), acc.green(), acc.blue(), 185)))
-
-            # Highlight outer arc
-            painter.setPen(QPen(acc_light, 2.5))
-            painter.setBrush(Qt.NoBrush)
-            painter.drawArc(
-                cx - self._ring_r, cy - self._ring_r,
-                self._ring_r * 2, self._ring_r * 2,
-                int(-math.degrees(angle_start) * 16),
-                int(-math.degrees(angle_span) * 16),
-            )
-
-            # Highlight inner arc
-            painter.setPen(QPen(acc_light, 1.5))
-            painter.drawArc(
-                cx - self._center_r, cy - self._center_r,
-                self._center_r * 2, self._center_r * 2,
-                int(-math.degrees(angle_start) * 16),
-                int(-math.degrees(angle_span) * 16),
-            )
 
         # ── 4. Segment dividers ──────────────────────────────────────
         painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
@@ -967,12 +945,6 @@ class RingOverlay(QWidget):
         painter.setBrush(QBrush(hub_grad))
         painter.setPen(QPen(QColor(255, 255, 255, 15), 1))
         painter.drawEllipse(QPoint(cx, cy), self._center_r, self._center_r)
-
-        # Inner accent ring inside hub
-        painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 60), 2))
-        painter.setBrush(Qt.NoBrush)
-        inner_r = self._center_r - 12
-        painter.drawEllipse(QPoint(cx, cy), inner_r, inner_r)
 
         # Centre text
         painter.setPen(QColor(220, 220, 225))
@@ -997,16 +969,10 @@ class RingOverlay(QWidget):
                 pw, ph = pix.width(), pix.height()
 
                 if is_hi:
-                    # Selected: glow ring + slightly enlarged
+                    # Selected: slightly enlarged
                     scale = 1.15
                     sw, sh = int(pw * scale), int(ph * scale)
                     scaled = pix.scaled(sw, sh, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    glow = QRadialGradient(ipos.x(), ipos.y(), int(max(sw, sh) * 0.7))
-                    glow.setColorAt(0.0, QColor(acc.red(), acc.green(), acc.blue(), 100))
-                    glow.setColorAt(1.0, QColor(acc.red(), acc.green(), acc.blue(), 0))
-                    painter.setBrush(QBrush(glow))
-                    painter.setPen(Qt.NoPen)
-                    painter.drawEllipse(ipos, int(max(sw, sh) * 0.7), int(max(sw, sh) * 0.7))
                     painter.drawPixmap(
                         ipos.x() - sw // 2, ipos.y() - sh // 2, sw, sh, scaled,
                     )

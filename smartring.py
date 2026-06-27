@@ -102,6 +102,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "accent_color": "#0078D4",   # highlight / accent colour
     "theme": "dark",             # "light" or "dark" (wizard always starts light)
     "auto_start": False,         # launch with Windows
+    "show_labels": True,         # show app names in the ring
     "animation_duration": 220,    # fade-in / fade-out (ms)
     "apps": [
         {"name": "记事本",    "path": "notepad.exe",                    "args": "", "icon": ""},
@@ -551,6 +552,10 @@ class ConfigManager:
         return bool(self.data.get("auto_start", False))
 
     @property
+    def show_labels(self) -> bool:
+        return bool(self.data.get("show_labels", True))
+
+    @property
     def animation_duration(self) -> int:
         return int(self.data.get("animation_duration", 220))
 
@@ -584,6 +589,7 @@ class RingOverlay(QWidget):
         icon_size: int = 38,
         accent_color: str = "#0078D4",
         animation_duration: int = 220,
+        show_labels: bool = True,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -593,8 +599,9 @@ class RingOverlay(QWidget):
         self._icon_sz = icon_size
         self._accent = hex_to_qcolor(accent_color)
         self._anim_ms = animation_duration
+        self._show_labels = show_labels
         self._highlighted: int = -1
-        self._anim_highlight: float = -1.0   # animated highlight index (for transitions)
+        self._anim_highlight: float = -1.0
         self._launched = False
         self._hiding = False
         self._label_padding = 24
@@ -909,24 +916,7 @@ class RingOverlay(QWidget):
             # Use animated highlight for smooth transitions
             hi = int(round(self._anim_highlight))
 
-        if hi >= 0:
-            seg_angle = 2.0 * math.pi / n
-            angle_center = self._app_angle(hi)
-            angle_start = angle_center - seg_angle / 2.0
-            angle_span = seg_angle
-
-            # Wedge for the selected segment
-            wedge = QPainterPath()
-            wedge.moveTo(cx, cy)
-            wedge.arcTo(
-                cx - self._ring_r, cy - self._ring_r,
-                self._ring_r * 2, self._ring_r * 2,
-                int(-math.degrees(angle_start) * 16),
-                int(-math.degrees(angle_span) * 16),
-            )
-            wedge.closeSubpath()
-            highlight_area = wedge.intersected(ring_body).subtracted(hub)
-            painter.fillPath(highlight_area, QBrush(QColor(acc.red(), acc.green(), acc.blue(), 185)))
+        # (no wedge fill — selection indicated by icon size + label only)
 
         # ── 4. Segment dividers ──────────────────────────────────────
         painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
@@ -986,36 +976,36 @@ class RingOverlay(QWidget):
             lpos = self._app_position(i, label_r)
             name = self._apps[i]["name"]
 
-            if is_hi:
-                # Selected: bold + accent pill + bright text
-                label_font = QFont("Microsoft YaHei", 10, QFont.Bold)
-                painter.setFont(label_font)
-                fm = QFontMetrics(label_font)
-                text_w = fm.horizontalAdvance(name)
-                th = fm.height()
+            if getattr(self, '_show_labels', True):
+                if is_hi:
+                    # Selected: bold + subtle pill + bright text (no accent colour)
+                    label_font = QFont("Microsoft YaHei", 10, QFont.Bold)
+                    painter.setFont(label_font)
+                    fm = QFontMetrics(label_font)
+                    text_w = fm.horizontalAdvance(name)
+                    th = fm.height()
 
-                pill_w, pill_h = text_w + 18, th + 6
-                pill_rect = QRect(lpos.x() - pill_w // 2, lpos.y() - pill_h // 2, pill_w, pill_h)
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 220)))
-                painter.drawRoundedRect(pill_rect, 10, 10)
-                painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 120), 1.5))
-                painter.setBrush(Qt.NoBrush)
-                painter.drawRoundedRect(pill_rect, 10, 10)
-                painter.setPen(QColor(255, 255, 255))
-            else:
-                # Not selected: normal font, normal colour — no change
-                label_font = QFont("Microsoft YaHei", 9, QFont.Normal)
-                painter.setFont(label_font)
-                fm = QFontMetrics(label_font)
-                text_w = fm.horizontalAdvance(name)
-                th = fm.height()
-                painter.setPen(QColor(210, 210, 215))
+                    pill_w, pill_h = text_w + 18, th + 6
+                    pill_rect = QRect(lpos.x() - pill_w // 2, lpos.y() - pill_h // 2, pill_w, pill_h)
+                    painter.setPen(Qt.NoPen)
+                    painter.setBrush(QBrush(QColor(60, 60, 68, 220)))
+                    painter.drawRoundedRect(pill_rect, 10, 10)
+                    painter.setPen(QPen(QColor(255, 255, 255, 40), 1))
+                    painter.setBrush(Qt.NoBrush)
+                    painter.drawRoundedRect(pill_rect, 10, 10)
+                    painter.setPen(QColor(255, 255, 255))
+                else:
+                    label_font = QFont("Microsoft YaHei", 9, QFont.Normal)
+                    painter.setFont(label_font)
+                    fm = QFontMetrics(label_font)
+                    text_w = fm.horizontalAdvance(name)
+                    th = fm.height()
+                    painter.setPen(QColor(210, 210, 215))
 
-            painter.drawText(
-                QRect(lpos.x() - text_w // 2, lpos.y() - th // 2, text_w, th),
-                Qt.AlignCenter, name,
-            )
+                painter.drawText(
+                    QRect(lpos.x() - text_w // 2, lpos.y() - th // 2, text_w, th),
+                    Qt.AlignCenter, name,
+                )
 
     # ── events ───────────────────────────────────────────────────────────
 
@@ -1104,6 +1094,12 @@ class SettingsDialog(QWidget):
         self._auto_start_cb = QCheckBox("开机自启")
         self._auto_start_cb.setToolTip("勾选后 SmartRing 会随 Windows 启动")
         grid1.addWidget(self._auto_start_cb, 0, 4)
+
+        # Show labels checkbox
+        grid1.addWidget(QLabel("显示标签:"), 1, 0)
+        self._show_labels_cb = QCheckBox("在圆环中显示应用名称")
+        self._show_labels_cb.setToolTip("取消勾选则圆环中只显示图标，不显示应用名")
+        grid1.addWidget(self._show_labels_cb, 1, 1, 1, 4)
 
         grid1.setColumnStretch(1, 2)
         card1.setLayout(grid1)
@@ -1411,6 +1407,7 @@ class SettingsDialog(QWidget):
         self._hotkey_edit.setText(self._config.hotkey)
         self._mode_combo.setText(self._config.mode)
         self._auto_start_cb.setChecked(self._config.auto_start)
+        self._show_labels_cb.setChecked(self._config.show_labels)
         self._ring_spin.setText(str(self._config.ring_radius))
         self._center_spin.setText(str(self._config.center_radius))
         self._icon_spin.setText(str(self._config.icon_size))
@@ -1436,6 +1433,7 @@ class SettingsDialog(QWidget):
         self._config.data["mode"] = self._mode_combo.text().strip() or "hold"
         self._config.data["accent_color"] = self._color_edit.text().strip()
         self._config.data["auto_start"] = self._auto_start_cb.isChecked()
+        self._config.data["show_labels"] = self._show_labels_cb.isChecked()
 
         self._config.data["ring_radius"] = self._ring_spin.value()
         self._config.data["center_radius"] = self._center_spin.value()
@@ -2254,6 +2252,15 @@ class SetupWizard(QDialog):
         self._icon_spin.textChanged.connect(_update_preview)
         size_grid.addWidget(self._icon_spin, 2, 1)
 
+        # Show labels toggle
+        self._wiz_show_labels = QCheckBox("在圆环中显示应用名称")
+        self._wiz_show_labels.setChecked(self._config_data.get("show_labels", True))
+        self._wiz_show_labels.setStyleSheet("color: #444; font-size: 12px;")
+        self._wiz_show_labels.toggled.connect(
+            lambda v: self._config_data.update({"show_labels": v})
+        )
+        controls.addWidget(self._wiz_show_labels)
+
         controls.addLayout(size_grid)
         controls.addStretch()
 
@@ -2714,6 +2721,7 @@ class SmartRingApp(QObject):
                 icon_size=self._config.icon_size,
                 accent_color=self._config.accent_color,
                 animation_duration=self._config.animation_duration,
+                show_labels=self._config.show_labels,
             )
             self._ring.app_launched.connect(self._on_app_launched)
             self._ring.dismissed.connect(self._on_ring_dismissed)
@@ -2723,6 +2731,7 @@ class SmartRingApp(QObject):
             self._ring._icon_sz = self._config.icon_size
             self._ring._accent = hex_to_qcolor(self._config.accent_color)
             self._ring._anim_ms = self._config.animation_duration
+            self._ring._show_labels = self._config.show_labels
             self._ring._apps = apps
             self._ring._widget_size = 2 * (self._ring._ring_r + self._ring._label_padding)
             self._ring.resize(self._ring._widget_size, self._ring._widget_size)

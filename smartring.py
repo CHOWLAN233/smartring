@@ -819,8 +819,11 @@ class RingOverlay(QWidget):
         n = len(self._apps)
         if n == 0:
             return -1
+        # Normalise to [0, 2π) and rotate so 0 = top
         a = angle % (2.0 * math.pi)
         a = (a + math.pi / 2.0) % (2.0 * math.pi)
+        # Offset by half a segment so boundaries align with visual dividers
+        a = (a + math.pi / n) % (2.0 * math.pi)
         return int(a / (2.0 * math.pi / n)) % n
 
     def _update_highlight(self, mouse_pos: QPoint) -> None:
@@ -842,12 +845,7 @@ class RingOverlay(QWidget):
                 self._highlighted = seg
 
         if old != self._highlighted:
-            # Animate the highlight transition
-            self._highlight_anim.stop()
-            self._highlight_anim.setStartValue(float(old) if old >= 0 else -1.0)
-            self._highlight_anim.setEndValue(float(self._highlighted) if self._highlighted >= 0 else -1.0)
-            self._highlight_anim.setDuration(120)
-            self._highlight_anim.start()
+            self._anim_highlight = float(self._highlighted)
             self.update()
 
     def _on_highlight_anim(self, value) -> None:
@@ -930,12 +928,8 @@ class RingOverlay(QWidget):
             glow_wedge.closeSubpath()
             highlight_area = glow_wedge.intersected(ring_body).subtracted(hub)
 
-            # Gradient for the highlighted segment
-            hi_grad = QConicalGradient(cx, cy, -math.degrees(angle_center))
-            hi_grad.setColorAt(0.0, QColor(acc.red(), acc.green(), acc.blue(), 200))
-            hi_grad.setColorAt(0.5, QColor(acc.red(), acc.green(), acc.blue(), 170))
-            hi_grad.setColorAt(1.0, QColor(acc.red(), acc.green(), acc.blue(), 200))
-            painter.fillPath(highlight_area, QBrush(hi_grad))
+            # Fill the highlighted segment with accent colour
+            painter.fillPath(highlight_area, QBrush(QColor(acc.red(), acc.green(), acc.blue(), 185)))
 
             # Highlight outer arc
             painter.setPen(QPen(acc_light, 2.5))

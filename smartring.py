@@ -1147,40 +1147,34 @@ class SettingsDialog(QWidget):
         color_row.addStretch()
         ctrls.addLayout(color_row)
 
-        # Ring sizes with real-time preview
+        # Ring sizes with SpinBox +/- buttons and real-time preview
         def _settings_update_preview(*args):
-            try:
-                rr = int(self._ring_r_edit.text() or "190")
-                cr = int(self._center_r_edit.text() or "58")
-                sz = int(self._icon_sz_edit.text() or "38")
-                acc = self._color_edit.text().strip() or "#0078D4"
-            except ValueError:
-                return
+            rr = self._ring_spin.value()
+            cr = self._center_spin.value()
+            sz = self._icon_spin.value()
+            acc = self._color_edit.text().strip() or "#0078D4"
             if hasattr(self, '_settings_preview'):
                 self._settings_preview.set_params(rr, cr, sz, acc)
 
         size_grid = QGridLayout()
         size_grid.setSpacing(6)
         size_grid.addWidget(QLabel("外环半径:"), 0, 0)
-        self._ring_r_edit = QLineEdit(str(self._config.ring_radius))
-        self._ring_r_edit.setMaximumWidth(60)
-        self._ring_r_edit.textChanged.connect(_settings_update_preview)
-        size_grid.addWidget(self._ring_r_edit, 0, 1)
-        size_grid.addWidget(QLabel("px"), 0, 2)
+        self._ring_spin = SpinBox(value=self._config.ring_radius, min_val=80, max_val=500, step=5)
+        self._ring_spin.set_theme("dark")
+        self._ring_spin.textChanged.connect(_settings_update_preview)
+        size_grid.addWidget(self._ring_spin, 0, 1)
 
         size_grid.addWidget(QLabel("中心半径:"), 1, 0)
-        self._center_r_edit = QLineEdit(str(self._config.center_radius))
-        self._center_r_edit.setMaximumWidth(60)
-        self._center_r_edit.textChanged.connect(_settings_update_preview)
-        size_grid.addWidget(self._center_r_edit, 1, 1)
-        size_grid.addWidget(QLabel("px"), 1, 2)
+        self._center_spin = SpinBox(value=self._config.center_radius, min_val=20, max_val=250, step=2)
+        self._center_spin.set_theme("dark")
+        self._center_spin.textChanged.connect(_settings_update_preview)
+        size_grid.addWidget(self._center_spin, 1, 1)
 
         size_grid.addWidget(QLabel("图标大小:"), 2, 0)
-        self._icon_sz_edit = QLineEdit(str(self._config.icon_size))
-        self._icon_sz_edit.setMaximumWidth(60)
-        self._icon_sz_edit.textChanged.connect(_settings_update_preview)
-        size_grid.addWidget(self._icon_sz_edit, 2, 1)
-        size_grid.addWidget(QLabel("px"), 2, 2)
+        self._icon_spin = SpinBox(value=self._config.icon_size, min_val=16, max_val=96, step=2)
+        self._icon_spin.set_theme("dark")
+        self._icon_spin.textChanged.connect(_settings_update_preview)
+        size_grid.addWidget(self._icon_spin, 2, 1)
 
         size_grid.addWidget(QLabel("动画时长:"), 3, 0)
         self._anim_edit = QLineEdit(str(self._config.animation_duration))
@@ -1407,22 +1401,19 @@ class SettingsDialog(QWidget):
         """Push current inputs to the live ring preview."""
         if not hasattr(self, '_settings_preview'):
             return
-        try:
-            rr = int(self._ring_r_edit.text() or "190")
-            cr = int(self._center_r_edit.text() or "58")
-            sz = int(self._icon_sz_edit.text() or "38")
-            acc = self._color_edit.text().strip() or "#0078D4"
-        except ValueError:
-            return
+        rr = self._ring_spin.value()
+        cr = self._center_spin.value()
+        sz = self._icon_spin.value()
+        acc = self._color_edit.text().strip() or "#0078D4"
         self._settings_preview.set_params(rr, cr, sz, acc)
 
     def _load(self) -> None:
         self._hotkey_edit.setText(self._config.hotkey)
         self._mode_combo.setText(self._config.mode)
         self._auto_start_cb.setChecked(self._config.auto_start)
-        self._ring_r_edit.setText(str(self._config.ring_radius))
-        self._center_r_edit.setText(str(self._config.center_radius))
-        self._icon_sz_edit.setText(str(self._config.icon_size))
+        self._ring_spin.setText(str(self._config.ring_radius))
+        self._center_spin.setText(str(self._config.center_radius))
+        self._icon_spin.setText(str(self._config.icon_size))
         self._anim_edit.setText(str(self._config.animation_duration))
         self._color_edit.setText(self._config.accent_color)
 
@@ -1446,18 +1437,9 @@ class SettingsDialog(QWidget):
         self._config.data["accent_color"] = self._color_edit.text().strip()
         self._config.data["auto_start"] = self._auto_start_cb.isChecked()
 
-        try:
-            self._config.data["ring_radius"] = int(self._ring_r_edit.text() or "190")
-        except ValueError:
-            self._config.data["ring_radius"] = 190
-        try:
-            self._config.data["center_radius"] = int(self._center_r_edit.text() or "58")
-        except ValueError:
-            self._config.data["center_radius"] = 58
-        try:
-            self._config.data["icon_size"] = int(self._icon_sz_edit.text() or "38")
-        except ValueError:
-            self._config.data["icon_size"] = 38
+        self._config.data["ring_radius"] = self._ring_spin.value()
+        self._config.data["center_radius"] = self._center_spin.value()
+        self._config.data["icon_size"] = self._icon_spin.value()
         try:
             self._config.data["animation_duration"] = int(self._anim_edit.text() or "220")
         except ValueError:

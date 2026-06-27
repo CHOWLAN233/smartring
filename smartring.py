@@ -654,10 +654,17 @@ class RingOverlay(QWidget):
             icon = QIcon()
             icon_path = app.get("icon", "")
             exe_path = app.get("path", "")
-            if icon_path and os.path.isfile(icon_path):
-                icon = QIcon(icon_path)
-            elif exe_path and os.path.isfile(exe_path):
+
+            # Try user-specified icon file (with and without path resolution)
+            if icon_path:
+                resolved = resolve_app_path(icon_path)
+                if os.path.isfile(resolved):
+                    icon = QIcon(resolved)
+
+            # If no icon yet, try extracting from the executable
+            if icon.isNull() and exe_path:
                 icon = extract_icon(exe_path)
+
             self._icons.append(icon)
             self._cached_pixmaps.append(None)
 
@@ -675,9 +682,6 @@ class RingOverlay(QWidget):
             pix = icon.pixmap(sz, sz)
             if pix.isNull():
                 pix = self._letter_icon(index, sz)
-
-        # Apply drop-shadow to the icon
-        pix = self._shadow_icon(pix)
 
         if 0 <= index < len(self._cached_pixmaps):
             self._cached_pixmaps[index] = pix
@@ -2753,30 +2757,36 @@ class SmartRingApp(QObject):
         path = app.get("path", "")
         args = app.get("args", "")
 
+        # Hide the ring immediately so it doesn't appear frozen
+        if self._ring:
+            self._ring.hide_ring()
+
         if not path:
             self._tray.showMessage(APP_NAME, f"应用 '{app['name']}' 路径为空!",
                                    QSystemTrayIcon.Warning, 2000)
-            if self._ring:
-                self._ring.hide_ring()
             return
 
-        try:
-            if args:
-                subprocess.Popen(f'"{path}" {args}', shell=True)
-            else:
-                if sys.platform == "win32":
-                    os.startfile(path)
-                else:
-                    subprocess.Popen([path])
-        except FileNotFoundError:
-            self._tray.showMessage(APP_NAME, f"找不到应用:\n{path}",
-                                   QSystemTrayIcon.Warning, 3000)
-        except Exception as exc:
-            self._tray.showMessage(APP_NAME, f"启动失败: {exc}",
-                                   QSystemTrayIcon.Warning, 3000)
+        # Resolve short names (e.g. 'notepad.exe') to full paths
+        full_path = resolve_app_path(path)
 
-        if self._ring:
-            self._ring.hide_ring()
+        # Launch in a deferred manner so the ring hides first
+        def _launch():
+            try:
+                if args:
+                    subprocess.Popen(f'"{full_path}" {args}', shell=True)
+                else:
+                    if sys.platform == "win32":
+                        os.startfile(full_path)
+                    else:
+                        subprocess.Popen([full_path])
+            except FileNotFoundError:
+                self._tray.showMessage(APP_NAME, f"找不到应用:\n{path}",
+                                       QSystemTrayIcon.Warning, 3000)
+            except Exception as exc:
+                self._tray.showMessage(APP_NAME, f"启动失败: {exc}",
+                                       QSystemTrayIcon.Warning, 3000)
+
+        QTimer.singleShot(100, _launch)
 
     def _on_ring_dismissed(self) -> None:
         pass

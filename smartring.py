@@ -98,6 +98,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "center_radius": 58,          # centre hub radius (px)
     "icon_size": 38,              # app icon size (px)
     "accent_color": "#0078D4",   # highlight / accent colour
+    "theme": "dark",             # "light" or "dark" (wizard always starts light)
     "animation_duration": 220,    # fade-in / fade-out (ms)
     "apps": [
         {"name": "记事本",    "path": "notepad.exe",                    "args": "", "icon": ""},
@@ -303,9 +304,9 @@ class KeyCaptureLineEdit(QLineEdit):
         self.setReadOnly(True)
         self.setPlaceholderText("点击此处，然后按下快捷键…")
         self.setStyleSheet(
-            "QLineEdit { background-color: #1a1a20; border: 2px dashed #555; "
-            "border-radius: 6px; padding: 10px 14px; color: #aaa; font-size: 15px; }"
-            "QLineEdit:focus { border-color: #0078D4; color: #e0e0e0; }"
+            "QLineEdit { background-color: #f8f8fa; border: 2px dashed #ccc; "
+            "border-radius: 6px; padding: 10px 14px; color: #999; font-size: 15px; }"
+            "QLineEdit:focus { border-color: #0078D4; color: #333; }"
         )
         self._listener: Optional[pynput_keyboard.Listener] = None
 
@@ -329,8 +330,8 @@ class KeyCaptureLineEdit(QLineEdit):
         self._main_key = None
         self.setText("…")
         self.setStyleSheet(
-            "QLineEdit { background-color: #0d1a2d; border: 2px solid #0078D4; "
-            "border-radius: 6px; padding: 10px 14px; color: #4af; font-size: 15px; }"
+            "QLineEdit { background-color: #e8f0fa; border: 2px solid #0078D4; "
+            "border-radius: 6px; padding: 10px 14px; color: #0078D4; font-size: 15px; }"
         )
         try:
             self._listener = pynput_keyboard.Listener(
@@ -349,9 +350,9 @@ class KeyCaptureLineEdit(QLineEdit):
         except Exception:
             pass
         self.setStyleSheet(
-            "QLineEdit { background-color: #1a1a20; border: 2px dashed #555; "
-            "border-radius: 6px; padding: 10px 14px; color: #aaa; font-size: 15px; }"
-            "QLineEdit:focus { border-color: #0078D4; color: #e0e0e0; }"
+            "QLineEdit { background-color: #f8f8fa; border: 2px dashed #ccc; "
+            "border-radius: 6px; padding: 10px 14px; color: #999; font-size: 15px; }"
+            "QLineEdit:focus { border-color: #0078D4; color: #333; }"
         )
 
     def _on_key_press(self, key) -> None:
@@ -487,6 +488,11 @@ class ConfigManager:
     @property
     def accent_color(self) -> str:
         return str(self.data.get("accent_color", "#0078D4"))
+
+    @property
+    def theme(self) -> str:
+        t = self.data.get("theme", "dark")
+        return t if t in ("light", "dark") else "dark"
 
     @property
     def animation_duration(self) -> int:
@@ -1379,6 +1385,136 @@ class SettingsDialog(QWidget):
 
 
 # =============================================================================
+# SpinBox  —  tiny numeric input with +/- buttons for fine-tuning
+# =============================================================================
+
+class SpinBox(QWidget):
+    """Number input with + / − buttons, emits textChanged like QLineEdit."""
+    textChanged = pyqtSignal(str)
+
+    def __init__(
+        self, value: int = 190, min_val: int = 30, max_val: int = 800,
+        step: int = 5, suffix: str = "", parent=None,
+    ):
+        super().__init__(parent)
+        self._min = min_val
+        self._max = max_val
+        self._step = step
+        self._suffix = suffix
+        self._val = value
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(1)
+
+        # Minus button
+        minus = QPushButton("−")
+        minus.setFixedSize(24, 24)
+        minus.setStyleSheet(
+            "QPushButton { background: #ddd; border: 1px solid #bbb; "
+            "border-radius: 3px; font-weight: bold; font-size: 14px; color: #333; }"
+            "QPushButton:hover { background: #ccc; }"
+        )
+        minus.clicked.connect(self._decrement)
+        layout.addWidget(minus)
+
+        # Number display
+        self._edit = QLineEdit(str(value))
+        self._edit.setFixedWidth(52)
+        self._edit.setAlignment(Qt.AlignCenter)
+        self._edit.setStyleSheet(
+            "QLineEdit { background: white; border: 1px solid #ccc; "
+            "border-radius: 3px; padding: 2px 4px; font-size: 13px; color: #222; }"
+        )
+        self._edit.textChanged.connect(self._on_text)
+        layout.addWidget(self._edit)
+
+        # Suffix label
+        if suffix:
+            lbl = QLabel(suffix)
+            lbl.setStyleSheet("color: #555; font-size: 13px;")
+            layout.addWidget(lbl)
+
+        # Plus button
+        plus = QPushButton("+")
+        plus.setFixedSize(24, 24)
+        plus.setStyleSheet(
+            "QPushButton { background: #ddd; border: 1px solid #bbb; "
+            "border-radius: 3px; font-weight: bold; font-size: 14px; color: #333; }"
+            "QPushButton:hover { background: #ccc; }"
+        )
+        plus.clicked.connect(self._increment)
+        layout.addWidget(plus)
+
+        self._minus_btn = minus
+        self._plus_btn = plus
+
+    def _increment(self) -> None:
+        self._val = min(self._max, self._val + self._step)
+        self._edit.blockSignals(True)
+        self._edit.setText(str(self._val))
+        self._edit.blockSignals(False)
+        self.textChanged.emit(str(self._val))
+
+    def _decrement(self) -> None:
+        self._val = max(self._min, self._val - self._step)
+        self._edit.blockSignals(True)
+        self._edit.setText(str(self._val))
+        self._edit.blockSignals(False)
+        self.textChanged.emit(str(self._val))
+
+    def _on_text(self, text: str) -> None:
+        try:
+            v = int(text)
+            if self._min <= v <= self._max:
+                self._val = v
+                self.textChanged.emit(text)
+        except ValueError:
+            pass  # ignore invalid input, keep old value
+
+    def text(self) -> str:
+        return self._edit.text()
+
+    def setText(self, text: str) -> None:
+        self._edit.blockSignals(True)
+        self._edit.setText(text)
+        self._edit.blockSignals(False)
+        try:
+            self._val = int(text)
+        except ValueError:
+            pass
+
+    def value(self) -> int:
+        return self._val
+
+    def set_theme(self, theme: str) -> None:
+        """Switch button/input colours for light vs dark theme."""
+        if theme == "dark":
+            btn_style = (
+                "QPushButton { background: #3a3a44; border: 1px solid #555; "
+                "border-radius: 3px; font-weight: bold; font-size: 14px; color: #ccc; }"
+                "QPushButton:hover { background: #4a4a54; }"
+            )
+            edit_style = (
+                "QLineEdit { background: #1e1e22; border: 1px solid #555; "
+                "border-radius: 3px; padding: 2px 4px; font-size: 13px; color: #e0e0e0; }"
+            )
+        else:
+            btn_style = (
+                "QPushButton { background: #e8e8ec; border: 1px solid #bbb; "
+                "border-radius: 3px; font-weight: bold; font-size: 14px; color: #333; }"
+                "QPushButton:hover { background: #ddd; }"
+            )
+            edit_style = (
+                "QLineEdit { background: white; border: 1px solid #ccc; "
+                "border-radius: 3px; padding: 2px 4px; font-size: 13px; color: #222; }"
+            )
+        self._minus_btn.setStyleSheet(btn_style)
+        self._plus_btn.setStyleSheet(btn_style)
+        self._edit.setStyleSheet(edit_style)
+
+
+# =============================================================================
 # RingPreview  —  tiny live-preview of the ring for the wizard
 # =============================================================================
 
@@ -1529,12 +1665,12 @@ class SetupWizard(QDialog):
     def _setup_ui(self) -> None:
         self.setStyleSheet("""
             QDialog {
-                background-color: #1e1e24;
-                color: #d0d0d5;
+                background-color: #f5f5f8;
+                color: #333;
                 font-family: "Microsoft YaHei", "Segoe UI", sans-serif;
             }
             QLabel#stepLabel {
-                color: #888;
+                color: #aaa;
                 font-size: 12px;
             }
             QLabel#stepLabelActive {
@@ -1545,11 +1681,11 @@ class SetupWizard(QDialog):
             QLabel#titleLabel {
                 font-size: 20px;
                 font-weight: bold;
-                color: #e8e8ec;
+                color: #1a1a1e;
             }
             QLabel#descLabel {
                 font-size: 13px;
-                color: #999;
+                color: #777;
                 line-height: 1.5;
             }
         """)
@@ -1580,7 +1716,7 @@ class SetupWizard(QDialog):
         # Divider
         div = QFrame()
         div.setFrameShape(QFrame.HLine)
-        div.setStyleSheet("QFrame { color: #333; }")
+        div.setStyleSheet("QFrame { color: #ddd; }")
         main_layout.addWidget(div)
 
         # ── Page stack ──────────────────────────────────────────────────
@@ -1622,22 +1758,22 @@ class SetupWizard(QDialog):
 
         main_layout.addLayout(nav)
 
-        # Style navigation buttons
+        # Style navigation buttons (light theme)
         btn_style = """
             QPushButton {
                 background-color: #0078D4; color: white;
                 border-radius: 6px; padding: 8px 20px;
-                font-weight: bold; font-size: 13px;
+                font-weight: bold; font-size: 13px; border: none;
             }
             QPushButton:hover { background-color: #1084d8; }
-            QPushButton:disabled { background-color: #444; color: #888; }
+            QPushButton:disabled { background-color: #ccc; color: #999; }
         """
         self._next_btn.setStyleSheet(btn_style)
         self._finish_btn.setStyleSheet(btn_style)
         self._back_btn.setStyleSheet(
-            "QPushButton { background-color: #3a3a42; color: #ccc; "
-            "border-radius: 6px; padding: 8px 20px; font-size: 13px; }"
-            "QPushButton:hover { background-color: #4a4a52; }"
+            "QPushButton { background-color: #e0e0e4; color: #555; "
+            "border-radius: 6px; padding: 8px 20px; font-size: 13px; border: 1px solid #ccc; }"
+            "QPushButton:hover { background-color: #d0d0d5; }"
         )
 
         self._update_step()
@@ -1742,13 +1878,13 @@ class SetupWizard(QDialog):
     def _update_mode_style(self) -> None:
         mode = self._config_data["mode"]
         sel = (
-            "QPushButton { background-color: #0d2a45; border: 2px solid #0078D4; "
+            "QPushButton { background-color: #0078D4; border: 2px solid #005a9e; "
             "border-radius: 8px; color: white; font-size: 12px; padding: 8px; }"
         )
         unsel = (
-            "QPushButton { background-color: #2a2a32; border: 2px solid #444; "
-            "border-radius: 8px; color: #999; font-size: 12px; padding: 8px; }"
-            "QPushButton:hover { border-color: #666; color: #ccc; }"
+            "QPushButton { background-color: #f0f0f3; border: 2px solid #ddd; "
+            "border-radius: 8px; color: #777; font-size: 12px; padding: 8px; }"
+            "QPushButton:hover { border-color: #0078D4; color: #333; }"
         )
         self._mode_hold.setStyleSheet(sel if mode == "hold" else unsel)
         self._mode_toggle.setStyleSheet(sel if mode == "toggle" else unsel)
@@ -1793,9 +1929,9 @@ class SetupWizard(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setStyleSheet(
-            "QScrollArea { background: #25252c; border: 1px solid #3a3a44; border-radius: 6px; }"
-            "QScrollBar:vertical { background: #1e1e24; width: 8px; border-radius: 4px; }"
-            "QScrollBar::handle:vertical { background: #555; border-radius: 4px; min-height: 24px; }"
+            "QScrollArea { background: #fafafa; border: 1px solid #ddd; border-radius: 6px; }"
+            "QScrollBar:vertical { background: #f0f0f3; width: 8px; border-radius: 4px; }"
+            "QScrollBar::handle:vertical { background: #ccc; border-radius: 4px; min-height: 24px; }"
             "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }"
         )
         scroll.setMaximumHeight(200)
@@ -1824,19 +1960,19 @@ class SetupWizard(QDialog):
 
         input_style = (
             "QLineEdit {"
-            "  background-color: #2d2d35;"
-            "  border: 1px solid #555;"
+            "  background-color: white;"
+            "  border: 1px solid #ccc;"
             "  border-radius: 4px;"
             "  padding: 5px 8px;"
-            "  color: #e8e8ec;"
+            "  color: #333;"
             "  font-size: 12px;"
             "}"
             "QLineEdit:focus {"
             "  border-color: #0078D4;"
-            "  background-color: #252530;"
+            "  background-color: #fafafe;"
             "}"
             "QLineEdit::placeholder {"
-            "  color: #777;"
+            "  color: #aaa;"
             "}"
         )
 
@@ -1916,13 +2052,13 @@ class SetupWizard(QDialog):
         # LEFT — live ring preview
         preview_container = QFrame()
         preview_container.setStyleSheet(
-            "QFrame { background-color: #1a1a22; border: 1px solid #3a3a44; border-radius: 10px; }"
+            "QFrame { background-color: #fff; border: 1px solid #ddd; border-radius: 10px; }"
         )
         preview_layout = QVBoxLayout(preview_container)
         preview_layout.setContentsMargins(10, 10, 10, 10)
 
         preview_label = QLabel("实时预览")
-        preview_label.setStyleSheet("color: #888; font-size: 11px; border: none;")
+        preview_label.setStyleSheet("color: #888; font-size: 11px; border: none; background: transparent;")
         preview_label.setAlignment(Qt.AlignCenter)
         preview_layout.addWidget(preview_label)
 
@@ -1942,45 +2078,68 @@ class SetupWizard(QDialog):
 
         # RIGHT — controls
         controls = QVBoxLayout()
-        controls.setSpacing(12)
+        controls.setSpacing(10)
 
         # Accent color grid
         color_label = QLabel("主题色:")
-        color_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        color_label.setStyleSheet("font-weight: bold; color: #444;")
         controls.addWidget(color_label)
 
         color_grid = QGridLayout()
-        color_grid.setSpacing(8)
+        color_grid.setSpacing(6)
         self._color_btns: List[QPushButton] = []
         for i, (hex_code, cname) in enumerate(self.ACCENT_COLORS):
             btn = QPushButton()
-            btn.setFixedSize(40, 40)
+            btn.setFixedSize(36, 36)
             btn.setToolTip(cname)
             is_sel = hex_code == self._config_data["accent_color"]
             btn.setStyleSheet(
-                f"QPushButton {{ background-color: {hex_code}; border-radius: 20px; "
-                f"border: 3px solid {'white' if is_sel else '#444'}; }}"
-                f"QPushButton:hover {{ border-color: #fff; }}"
+                f"QPushButton {{ background-color: {hex_code}; border-radius: 18px; "
+                f"border: 3px solid {'#222' if is_sel else '#ddd'}; }}"
+                f"QPushButton:hover {{ border-color: #555; }}"
             )
             btn.clicked.connect(lambda checked, h=hex_code: self._select_color(h))
             color_grid.addWidget(btn, i // 4, i % 4)
             self._color_btns.append(btn)
         controls.addLayout(color_grid)
 
-        controls.addSpacing(6)
+        # ── Theme toggle (light / dark) ──────────────────────────────
+        theme_label = QLabel("界面主题:")
+        theme_label.setStyleSheet("font-weight: bold; color: #444; margin-top: 4px;")
+        controls.addWidget(theme_label)
 
-        # Ring sizes with real-time preview updates
+        theme_row = QHBoxLayout()
+        theme_row.setSpacing(10)
+        self._theme_light = QPushButton("☀ 浅色")
+        self._theme_light.setCheckable(True)
+        self._theme_light.setMinimumHeight(34)
+        self._theme_dark = QPushButton("🌙 深色")
+        self._theme_dark.setCheckable(True)
+        self._theme_dark.setMinimumHeight(34)
+
+        cur_theme = self._config_data.get("theme", "dark")
+        self._theme_light.setChecked(cur_theme == "light")
+        self._theme_dark.setChecked(cur_theme == "dark")
+        self._theme_light.clicked.connect(lambda: self._set_theme("light"))
+        self._theme_dark.clicked.connect(lambda: self._set_theme("dark"))
+        self._update_theme_toggle_style()
+
+        theme_row.addWidget(self._theme_light)
+        theme_row.addWidget(self._theme_dark)
+        theme_row.addStretch()
+        controls.addLayout(theme_row)
+
+        controls.addSpacing(4)
+
+        # ── Ring sizes with SpinBox +/- buttons ──────────────────────
         size_label = QLabel("圆环尺寸:")
-        size_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        size_label.setStyleSheet("font-weight: bold; color: #444;")
         controls.addWidget(size_label)
 
-        def _update_preview():
-            try:
-                rr = int(self._r_edit.text() or "190")
-                cr2 = int(self._cr_edit.text() or "58")
-                sz2 = int(self._icon_edit.text() or "38")
-            except ValueError:
-                return
+        def _update_preview(*args):
+            rr = self._ring_spin.value()
+            cr2 = self._center_spin.value()
+            sz2 = self._icon_spin.value()
             self._config_data["ring_radius"] = rr
             self._config_data["center_radius"] = cr2
             self._config_data["icon_size"] = sz2
@@ -1988,28 +2147,28 @@ class SetupWizard(QDialog):
                 self._ring_preview.set_params(rr, cr2, sz2, self._config_data["accent_color"])
 
         size_grid = QGridLayout()
-        size_grid.setSpacing(8)
+        size_grid.setSpacing(6)
 
         size_grid.addWidget(QLabel("外环半径:"), 0, 0)
-        self._r_edit = QLineEdit(str(self._config_data["ring_radius"]))
-        self._r_edit.setMaximumWidth(65)
-        self._r_edit.textChanged.connect(_update_preview)
-        size_grid.addWidget(self._r_edit, 0, 1)
-        size_grid.addWidget(QLabel("px"), 0, 2)
+        self._ring_spin = SpinBox(
+            value=self._config_data["ring_radius"], min_val=80, max_val=500, step=5
+        )
+        self._ring_spin.textChanged.connect(_update_preview)
+        size_grid.addWidget(self._ring_spin, 0, 1)
 
         size_grid.addWidget(QLabel("中心半径:"), 1, 0)
-        self._cr_edit = QLineEdit(str(self._config_data["center_radius"]))
-        self._cr_edit.setMaximumWidth(65)
-        self._cr_edit.textChanged.connect(_update_preview)
-        size_grid.addWidget(self._cr_edit, 1, 1)
-        size_grid.addWidget(QLabel("px"), 1, 2)
+        self._center_spin = SpinBox(
+            value=self._config_data["center_radius"], min_val=20, max_val=250, step=2
+        )
+        self._center_spin.textChanged.connect(_update_preview)
+        size_grid.addWidget(self._center_spin, 1, 1)
 
         size_grid.addWidget(QLabel("图标大小:"), 2, 0)
-        self._icon_edit = QLineEdit(str(self._config_data["icon_size"]))
-        self._icon_edit.setMaximumWidth(65)
-        self._icon_edit.textChanged.connect(_update_preview)
-        size_grid.addWidget(self._icon_edit, 2, 1)
-        size_grid.addWidget(QLabel("px"), 2, 2)
+        self._icon_spin = SpinBox(
+            value=self._config_data["icon_size"], min_val=16, max_val=96, step=2
+        )
+        self._icon_spin.textChanged.connect(_update_preview)
+        size_grid.addWidget(self._icon_spin, 2, 1)
 
         controls.addLayout(size_grid)
         controls.addStretch()
@@ -2017,25 +2176,47 @@ class SetupWizard(QDialog):
         content.addLayout(controls, stretch=1)
         layout.addLayout(content)
 
+        # Store references for _select_color
+        self._r_edit = self._ring_spin  # compatibility alias
+        self._cr_edit = self._center_spin
+        self._icon_edit = self._icon_spin
+
         return page
+
+    def _set_theme(self, theme: str) -> None:
+        self._config_data["theme"] = theme
+        self._theme_light.setChecked(theme == "light")
+        self._theme_dark.setChecked(theme == "dark")
+        self._update_theme_toggle_style()
+
+    def _update_theme_toggle_style(self) -> None:
+        t = self._config_data.get("theme", "dark")
+        sel = (
+            "QPushButton { background-color: #0078D4; color: white; "
+            "border-radius: 6px; padding: 6px 14px; font-weight: bold; border: none; }"
+        )
+        unsel = (
+            "QPushButton { background-color: #e8e8ec; color: #666; "
+            "border-radius: 6px; padding: 6px 14px; border: 1px solid #ddd; }"
+            "QPushButton:hover { background-color: #ddd; }"
+        )
+        self._theme_light.setStyleSheet(sel if t == "light" else unsel)
+        self._theme_dark.setStyleSheet(sel if t == "dark" else unsel)
 
     def _select_color(self, hex_code: str) -> None:
         self._config_data["accent_color"] = hex_code
         for btn, (hc, _) in zip(self._color_btns, self.ACCENT_COLORS):
             is_sel = hc == hex_code
             btn.setStyleSheet(
-                f"QPushButton {{ background-color: {hc}; border-radius: 20px; "
-                f"border: 3px solid {'white' if is_sel else '#444'}; }}"
-                f"QPushButton:hover {{ border-color: #fff; }}"
+                f"QPushButton {{ background-color: {hc}; border-radius: 18px; "
+                f"border: 3px solid {'#222' if is_sel else '#ddd'}; }}"
+                f"QPushButton:hover {{ border-color: #555; }}"
             )
         # Update live preview
         if hasattr(self, '_ring_preview'):
-            try:
-                rr = int(self._r_edit.text() or "190")
-                cr2 = int(self._cr_edit.text() or "58")
-                sz2 = int(self._icon_edit.text() or "38")
-            except ValueError:
-                rr, cr2, sz2 = 190, 58, 38
+            rr = self._ring_spin.value()
+            cr2 = self._center_spin.value()
+            sz2 = self._icon_spin.value()
             self._ring_preview.set_params(rr, cr2, sz2, hex_code)
 
     def _page_done(self) -> QWidget:
@@ -2136,18 +2317,10 @@ class SetupWizard(QDialog):
                 if apps:
                     self._config_data["apps"] = apps
             elif self._current_page == 3:  # appearance page
-                try:
-                    self._config_data["ring_radius"] = int(self._r_edit.text() or "190")
-                except ValueError:
-                    pass
-                try:
-                    self._config_data["center_radius"] = int(self._cr_edit.text() or "58")
-                except ValueError:
-                    pass
-                try:
-                    self._config_data["icon_size"] = int(self._icon_edit.text() or "38")
-                except ValueError:
-                    pass
+                if hasattr(self, '_ring_spin'):
+                    self._config_data["ring_radius"] = self._ring_spin.value()
+                    self._config_data["center_radius"] = self._center_spin.value()
+                    self._config_data["icon_size"] = self._icon_spin.value()
 
             self._current_page += 1
             self._update_step()
@@ -2164,18 +2337,11 @@ class SetupWizard(QDialog):
             self._config_data["apps"] = apps
 
         # Save appearance
-        try:
-            self._config_data["ring_radius"] = int(self._r_edit.text() or "190")
-        except ValueError:
-            pass
-        try:
-            self._config_data["center_radius"] = int(self._cr_edit.text() or "58")
-        except ValueError:
-            pass
-        try:
-            self._config_data["icon_size"] = int(self._icon_edit.text() or "38")
-        except ValueError:
-            pass
+        if hasattr(self, '_ring_spin'):
+            self._config_data["ring_radius"] = self._ring_spin.value()
+            self._config_data["center_radius"] = self._center_spin.value()
+            self._config_data["icon_size"] = self._icon_spin.value()
+        # Theme is already stored in _config_data["theme"] by _set_theme
 
         # Write config.json
         cfg_path = config_path()

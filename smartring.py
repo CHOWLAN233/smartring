@@ -58,6 +58,7 @@ from PyQt5.QtGui import (
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
+    QCheckBox,
     QColorDialog,
     QDialog,
     QFileDialog,
@@ -100,6 +101,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "icon_size": 38,              # app icon size (px)
     "accent_color": "#0078D4",   # highlight / accent colour
     "theme": "dark",             # "light" or "dark" (wizard always starts light)
+    "auto_start": False,         # launch with Windows
     "animation_duration": 220,    # fade-in / fade-out (ms)
     "apps": [
         {"name": "记事本",    "path": "notepad.exe",                    "args": "", "icon": ""},
@@ -115,6 +117,55 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 # =============================================================================
 # Helpers
 # =============================================================================
+
+def startup_shortcut_path() -> str:
+    """Path to the Windows Startup folder shortcut for SmartRing."""
+    startup_dir = os.path.join(
+        os.environ.get("APPDATA", ""),
+        "Microsoft", "Windows", "Start Menu", "Programs", "Startup",
+    )
+    return os.path.join(startup_dir, "SmartRing.vbs")
+
+
+def set_auto_start(enabled: bool) -> bool:
+    """
+    Create or remove the Windows startup shortcut.
+    Returns True on success.
+    """
+    spath = startup_shortcut_path()
+    try:
+        if enabled:
+            # Determine what to launch
+            exe_path = os.path.join(
+                os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)),
+                "SmartRing.exe" if getattr(sys, 'frozen', False) else "",
+            )
+            if getattr(sys, 'frozen', False) and os.path.isfile(exe_path):
+                target = exe_path
+            else:
+                # Launch via pythonw
+                script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SmartRing.pyw")
+                target = f'pythonw "{script}"'
+
+            vbs_content = (
+                'Set WshShell = CreateObject("WScript.Shell")\r\n'
+                f'WshShell.Run "{target}", 0, False\r\n'
+            )
+            os.makedirs(os.path.dirname(spath), exist_ok=True)
+            with open(spath, "w") as f:
+                f.write(vbs_content)
+        else:
+            if os.path.isfile(spath):
+                os.remove(spath)
+        return True
+    except Exception:
+        return False
+
+
+def get_auto_start() -> bool:
+    """Check if the startup shortcut exists."""
+    return os.path.isfile(startup_shortcut_path())
+
 
 def config_path() -> str:
     """Path to config.json — always next to the script / exe."""
@@ -494,6 +545,10 @@ class ConfigManager:
     def theme(self) -> str:
         t = self.data.get("theme", "dark")
         return t if t in ("light", "dark") else "dark"
+
+    @property
+    def auto_start(self) -> bool:
+        return bool(self.data.get("auto_start", False))
 
     @property
     def animation_duration(self) -> int:
@@ -948,13 +1003,12 @@ class RingOverlay(QWidget):
                 pw, ph = pix.width(), pix.height()
 
                 if is_hi:
-                    # Highlighted: full brightness, slightly enlarged + glow ring
+                    # Selected: glow ring + slightly enlarged
                     scale = 1.15
                     sw, sh = int(pw * scale), int(ph * scale)
                     scaled = pix.scaled(sw, sh, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                    # Soft glow behind highlighted icon
                     glow = QRadialGradient(ipos.x(), ipos.y(), int(max(sw, sh) * 0.7))
-                    glow.setColorAt(0.0, QColor(acc.red(), acc.green(), acc.blue(), 90))
+                    glow.setColorAt(0.0, QColor(acc.red(), acc.green(), acc.blue(), 100))
                     glow.setColorAt(1.0, QColor(acc.red(), acc.green(), acc.blue(), 0))
                     painter.setBrush(QBrush(glow))
                     painter.setPen(Qt.NoPen)
@@ -963,23 +1017,17 @@ class RingOverlay(QWidget):
                         ipos.x() - sw // 2, ipos.y() - sh // 2, sw, sh, scaled,
                     )
                 else:
-                    # Non-highlighted: dimmed + slightly smaller
-                    painter.setOpacity(0.35)
-                    scale = 0.92
-                    sw, sh = int(pw * scale), int(ph * scale)
-                    if sw > 0 and sh > 0:
-                        scaled = pix.scaled(sw, sh, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                        painter.drawPixmap(
-                            ipos.x() - sw // 2, ipos.y() - sh // 2, sw, sh, scaled,
-                        )
-                    painter.setOpacity(1.0)
+                    # Not selected: normal size, full opacity — no change
+                    painter.drawPixmap(
+                        ipos.x() - pw // 2, ipos.y() - ph // 2, pw, ph, pix,
+                    )
 
             # ── Label ────────────────────────────────────────────────
             lpos = self._app_position(i, label_r)
             name = self._apps[i]["name"]
 
             if is_hi:
-                # Highlighted: bold + accent pill background + bright text
+                # Selected: bold + accent pill + bright text
                 label_font = QFont("Microsoft YaHei", 10, QFont.Bold)
                 painter.setFont(label_font)
                 fm = QFontMetrics(label_font)
@@ -991,21 +1039,18 @@ class RingOverlay(QWidget):
                 painter.setPen(Qt.NoPen)
                 painter.setBrush(QBrush(QColor(acc.red(), acc.green(), acc.blue(), 220)))
                 painter.drawRoundedRect(pill_rect, 10, 10)
-
-                # Subtle outer border on pill
                 painter.setPen(QPen(QColor(acc.red(), acc.green(), acc.blue(), 120), 1.5))
                 painter.setBrush(Qt.NoBrush)
                 painter.drawRoundedRect(pill_rect, 10, 10)
-
                 painter.setPen(QColor(255, 255, 255))
             else:
-                # Non-highlighted: thin font, dimmed colour
-                label_font = QFont("Microsoft YaHei", 8, QFont.Normal)
+                # Not selected: normal font, normal colour — no change
+                label_font = QFont("Microsoft YaHei", 9, QFont.Normal)
                 painter.setFont(label_font)
                 fm = QFontMetrics(label_font)
                 text_w = fm.horizontalAdvance(name)
                 th = fm.height()
-                painter.setPen(QColor(120, 120, 130))
+                painter.setPen(QColor(210, 210, 215))
 
             painter.drawText(
                 QRect(lpos.x() - text_w // 2, lpos.y() - th // 2, text_w, th),
@@ -1094,58 +1139,100 @@ class SettingsDialog(QWidget):
         self._mode_combo.setToolTip("hold = 按住唤出, 松开启动\n"
                                     "toggle = 按一下切换显示/隐藏")
         grid1.addWidget(self._mode_combo, 0, 3)
+
+        # Auto-start checkbox
+        self._auto_start_cb = QCheckBox("开机自启")
+        self._auto_start_cb.setToolTip("勾选后 SmartRing 会随 Windows 启动")
+        grid1.addWidget(self._auto_start_cb, 0, 4)
+
         grid1.setColumnStretch(1, 2)
         card1.setLayout(grid1)
         clayout.addWidget(card1)
 
-        # ── Card: Appearance ─────────────────────────────────────────
+        # ── Card: Appearance (with live preview) ──────────────────────
         card2 = self._make_card("🎨 外观设置")
-        grid2 = QGridLayout()
-        grid2.setSpacing(10)
+        app_layout = QHBoxLayout()
+        app_layout.setSpacing(16)
+
+        # LEFT — live ring preview
+        self._settings_preview = RingPreview(
+            ring_radius=self._config.ring_radius,
+            center_radius=self._config.center_radius,
+            icon_size=self._config.icon_size,
+            accent_color=self._config.accent_color,
+        )
+        app_layout.addWidget(self._settings_preview)
+
+        # RIGHT — controls
+        ctrls = QVBoxLayout()
+        ctrls.setSpacing(8)
 
         # Accent colour
-        grid2.addWidget(QLabel("主题色:"), 0, 0)
+        color_row = QHBoxLayout()
+        color_row.addWidget(QLabel("主题色:"))
         self._color_swatch = QLabel()
-        self._color_swatch.setFixedSize(32, 32)
+        self._color_swatch.setFixedSize(28, 28)
         self._color_swatch.setStyleSheet(
             f"background-color: {self._config.accent_color}; "
-            "border-radius: 6px; border: 1px solid #555;"
+            "border-radius: 5px; border: 1px solid #555;"
         )
-        grid2.addWidget(self._color_swatch, 0, 1)
+        color_row.addWidget(self._color_swatch)
         self._color_edit = QLineEdit(self._config.accent_color)
         self._color_edit.setMaximumWidth(80)
         self._color_edit.textChanged.connect(self._on_color_text_changed)
-        grid2.addWidget(self._color_edit, 0, 2)
+        color_row.addWidget(self._color_edit)
         pick_btn = QPushButton("选择颜色...")
         pick_btn.clicked.connect(self._pick_color)
-        grid2.addWidget(pick_btn, 0, 3)
+        color_row.addWidget(pick_btn)
+        color_row.addStretch()
+        ctrls.addLayout(color_row)
 
-        # Ring sizes
-        grid2.addWidget(QLabel("外环半径:"), 1, 0)
+        # Ring sizes with real-time preview
+        def _settings_update_preview(*args):
+            try:
+                rr = int(self._ring_r_edit.text() or "190")
+                cr = int(self._center_r_edit.text() or "58")
+                sz = int(self._icon_sz_edit.text() or "38")
+                acc = self._color_edit.text().strip() or "#0078D4"
+            except ValueError:
+                return
+            if hasattr(self, '_settings_preview'):
+                self._settings_preview.set_params(rr, cr, sz, acc)
+
+        size_grid = QGridLayout()
+        size_grid.setSpacing(6)
+        size_grid.addWidget(QLabel("外环半径:"), 0, 0)
         self._ring_r_edit = QLineEdit(str(self._config.ring_radius))
-        self._ring_r_edit.setMaximumWidth(70)
-        grid2.addWidget(self._ring_r_edit, 1, 1)
-        grid2.addWidget(QLabel("px"), 1, 2)
+        self._ring_r_edit.setMaximumWidth(60)
+        self._ring_r_edit.textChanged.connect(_settings_update_preview)
+        size_grid.addWidget(self._ring_r_edit, 0, 1)
+        size_grid.addWidget(QLabel("px"), 0, 2)
 
-        grid2.addWidget(QLabel("中心半径:"), 1, 3)
+        size_grid.addWidget(QLabel("中心半径:"), 1, 0)
         self._center_r_edit = QLineEdit(str(self._config.center_radius))
-        self._center_r_edit.setMaximumWidth(70)
-        grid2.addWidget(self._center_r_edit, 1, 4)
-        grid2.addWidget(QLabel("px"), 1, 5)
+        self._center_r_edit.setMaximumWidth(60)
+        self._center_r_edit.textChanged.connect(_settings_update_preview)
+        size_grid.addWidget(self._center_r_edit, 1, 1)
+        size_grid.addWidget(QLabel("px"), 1, 2)
 
-        grid2.addWidget(QLabel("图标大小:"), 2, 0)
+        size_grid.addWidget(QLabel("图标大小:"), 2, 0)
         self._icon_sz_edit = QLineEdit(str(self._config.icon_size))
-        self._icon_sz_edit.setMaximumWidth(70)
-        grid2.addWidget(self._icon_sz_edit, 2, 1)
-        grid2.addWidget(QLabel("px"), 2, 2)
+        self._icon_sz_edit.setMaximumWidth(60)
+        self._icon_sz_edit.textChanged.connect(_settings_update_preview)
+        size_grid.addWidget(self._icon_sz_edit, 2, 1)
+        size_grid.addWidget(QLabel("px"), 2, 2)
 
-        grid2.addWidget(QLabel("动画时长:"), 2, 3)
+        size_grid.addWidget(QLabel("动画时长:"), 3, 0)
         self._anim_edit = QLineEdit(str(self._config.animation_duration))
-        self._anim_edit.setMaximumWidth(70)
-        grid2.addWidget(self._anim_edit, 2, 4)
-        grid2.addWidget(QLabel("ms"), 2, 5)
+        self._anim_edit.setMaximumWidth(60)
+        size_grid.addWidget(self._anim_edit, 3, 1)
+        size_grid.addWidget(QLabel("ms"), 3, 2)
 
-        card2.setLayout(grid2)
+        ctrls.addLayout(size_grid)
+        ctrls.addStretch()
+        app_layout.addLayout(ctrls)
+
+        card2.setLayout(app_layout)
         clayout.addWidget(card2)
 
         # ── Card: App list ───────────────────────────────────────────
@@ -1342,6 +1429,7 @@ class SettingsDialog(QWidget):
                 "border-radius: 6px; border: 1px solid #555;"
             )
             self._color_edit.setText(color.name().upper())
+            self._update_settings_preview()
 
     def _on_color_text_changed(self, text: str) -> None:
         try:
@@ -1353,10 +1441,25 @@ class SettingsDialog(QWidget):
             )
         except Exception:
             pass
+        self._update_settings_preview()
+
+    def _update_settings_preview(self) -> None:
+        """Push current inputs to the live ring preview."""
+        if not hasattr(self, '_settings_preview'):
+            return
+        try:
+            rr = int(self._ring_r_edit.text() or "190")
+            cr = int(self._center_r_edit.text() or "58")
+            sz = int(self._icon_sz_edit.text() or "38")
+            acc = self._color_edit.text().strip() or "#0078D4"
+        except ValueError:
+            return
+        self._settings_preview.set_params(rr, cr, sz, acc)
 
     def _load(self) -> None:
         self._hotkey_edit.setText(self._config.hotkey)
         self._mode_combo.setText(self._config.mode)
+        self._auto_start_cb.setChecked(self._config.auto_start)
         self._ring_r_edit.setText(str(self._config.ring_radius))
         self._center_r_edit.setText(str(self._config.center_radius))
         self._icon_sz_edit.setText(str(self._config.icon_size))
@@ -1381,6 +1484,7 @@ class SettingsDialog(QWidget):
         self._config.data["hotkey"] = hotkey
         self._config.data["mode"] = self._mode_combo.text().strip() or "hold"
         self._config.data["accent_color"] = self._color_edit.text().strip()
+        self._config.data["auto_start"] = self._auto_start_cb.isChecked()
 
         try:
             self._config.data["ring_radius"] = int(self._ring_r_edit.text() or "190")
@@ -1412,6 +1516,11 @@ class SettingsDialog(QWidget):
                 })
         self._config.data["apps"] = apps
         self._config.save()
+
+        # Apply auto-start setting
+        auto_start = self._auto_start_cb.isChecked()
+        set_auto_start(auto_start)
+
         self.config_saved.emit()
         QMessageBox.information(self, "已保存", "配置已保存，快捷键已重新加载。")
         self.close()

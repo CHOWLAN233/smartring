@@ -44,6 +44,7 @@ from PyQt5.QtCore import (
 from PyQt5.QtGui import (
     QBrush,
     QColor,
+    QConicalGradient,
     QCursor,
     QFont,
     QFontMetrics,
@@ -801,12 +802,20 @@ class RingOverlay(QWidget):
     # ── painting ─────────────────────────────────────────────────────────
 
     def paintEvent(self, _event) -> None:
+        if not hasattr(self, '_ring_center'):
+            return  # not yet positioned — skip painting
         painter = QPainter(self)
+        try:
+            self._do_paint(painter)
+        except Exception:
+            pass  # prevent crash from painting errors
+        painter.end()
+
+    def _do_paint(self, painter: QPainter) -> None:
         painter.setRenderHint(QPainter.Antialiasing)
         cx, cy = self._ring_center.x(), self._ring_center.y()
         n = len(self._apps)
         if n == 0:
-            painter.end()
             return
 
         acc = self._accent
@@ -976,8 +985,6 @@ class RingOverlay(QWidget):
                 QRect(lpos.x() - text_w // 2, lpos.y() - th // 2, text_w, th),
                 Qt.AlignCenter, name,
             )
-
-        painter.end()
 
     # ── events ───────────────────────────────────────────────────────────
 
@@ -2398,6 +2405,14 @@ class SmartRingApp(QObject):
         self._poll_timer.timeout.connect(self._poll)
         self._poll_timer.start(25)
 
+        # Startup notification
+        mode_desc = "按住唤出，松开启动" if self._config.mode == "hold" else "按一下切换"
+        self._tray.showMessage(
+            APP_NAME,
+            f"已就绪！\n快捷键: {self._config.hotkey.upper()}\n模式: {mode_desc}",
+            QSystemTrayIcon.Information, 3000,
+        )
+
     # ── tray ─────────────────────────────────────────────────────────────
 
     def _setup_tray(self) -> None:
@@ -2582,8 +2597,24 @@ class SmartRingApp(QObject):
                 self._on_hotkey_release()
 
     def _show_ring(self) -> None:
+        try:
+            self._show_ring_impl()
+        except Exception as exc:
+            self._tray.showMessage(
+                APP_NAME, f"显示圆环失败:\n{exc}",
+                QSystemTrayIcon.Warning, 3000,
+            )
+
+    def _show_ring_impl(self) -> None:
         cursor = QCursor.pos()
         apps = self._config.apps
+        if not apps:
+            self._tray.showMessage(
+                APP_NAME, "应用列表为空！请右键托盘 → 设置，添加至少一个应用。",
+                QSystemTrayIcon.Warning, 5000,
+            )
+            return
+
         need_recreate = (
             self._ring is None
             or len(getattr(self._ring, '_apps', [])) != len(apps)

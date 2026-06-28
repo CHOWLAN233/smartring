@@ -132,6 +132,40 @@ def startup_shortcut_path() -> str:
     return os.path.join(startup_dir, "SmartRing.vbs")
 
 
+def desktop_shortcut_path() -> str:
+    """Path to the SmartRing shortcut (.lnk) on the user's Desktop."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        CSIDL_DESKTOP = 0
+        buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+        ctypes.windll.shell32.SHGetFolderPathW(None, CSIDL_DESKTOP, None, 0, buf)
+        desktop = buf.value
+    except Exception:
+        desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+    return os.path.join(desktop, "SmartRing.lnk")
+
+
+def desktop_shortcut_exists() -> bool:
+    """Check whether the SmartRing desktop shortcut exists."""
+    return os.path.isfile(desktop_shortcut_path())
+
+
+def remove_desktop_shortcut() -> bool:
+    """Remove the SmartRing desktop shortcut.  Returns True on success."""
+    spath = desktop_shortcut_path()
+    try:
+        if os.path.isfile(spath):
+            os.remove(spath)
+        # Also remove any fallback .bat
+        bat_path = spath.replace(".lnk", ".bat")
+        if os.path.isfile(bat_path):
+            os.remove(bat_path)
+        return True
+    except Exception:
+        return False
+
+
 def set_auto_start(enabled: bool) -> bool:
     """
     Create or remove the Windows startup shortcut.
@@ -140,21 +174,29 @@ def set_auto_start(enabled: bool) -> bool:
     spath = startup_shortcut_path()
     try:
         if enabled:
-            # Determine what to launch
-            exe_path = os.path.join(
-                os.path.dirname(os.path.abspath(sys.executable if getattr(sys, 'frozen', False) else __file__)),
-                "SmartRing.exe" if getattr(sys, 'frozen', False) else "",
-            )
-            if getattr(sys, 'frozen', False) and os.path.isfile(exe_path):
-                target = exe_path
+            if getattr(sys, 'frozen', False):
+                # Running as PyInstaller EXE — launch the EXE directly
+                target = sys.executable  # sys.executable IS the EXE itself
             else:
-                # Launch via pythonw
+                # Running from source — launch SmartRing.pyw with pythonw.exe
                 script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SmartRing.pyw")
-                target = f'pythonw "{script}"'
+                # Use the full path to pythonw.exe to ensure it's found even when
+                # PATH is not fully set up at startup (e.g. early login stage).
+                pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                if not os.path.isfile(pythonw):
+                    pythonw = "pythonw"  # fallback
+                target = f'"{pythonw}" "{script}"'
 
+            # Build VBS with proper quote escaping: double-quote → "" in VBS
+            vbs_target = target.replace('"', '""')
+            # Set working directory so the script can find its files
+            work_dir = os.path.dirname(os.path.abspath(
+                sys.executable if getattr(sys, 'frozen', False) else __file__
+            )).replace('"', '""')
             vbs_content = (
                 'Set WshShell = CreateObject("WScript.Shell")\r\n'
-                f'WshShell.Run "{target}", 0, False\r\n'
+                f'WshShell.CurrentDirectory = "{work_dir}"\r\n'
+                f'WshShell.Run "{vbs_target}", 0, False\r\n'
             )
             os.makedirs(os.path.dirname(spath), exist_ok=True)
             with open(spath, "w") as f:
@@ -173,13 +215,44 @@ def get_auto_start() -> bool:
 
 
 def config_path() -> str:
-    """Path to config.json — always next to the script / exe."""
+    """Path to config.json — always next to the script / exe.
+
+    When running as a frozen EXE, if config.json is not found next to the
+    EXE (e.g. the EXE lives in dist\\ while config.json is in the project
+    root), we automatically look in the parent directory and copy any
+    existing config so the user's settings are preserved.
+    """
     if getattr(sys, 'frozen', False):
-        # Running as PyInstaller bundle — use the exe directory
-        base = os.path.dirname(os.path.abspath(sys.executable))
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        cfg = os.path.join(exe_dir, CONFIG_FILENAME)
+        if os.path.isfile(cfg):
+            return cfg
+        # Not next to the EXE — maybe the EXE is in a subfolder (e.g. dist\)
+        parent_cfg = os.path.join(os.path.dirname(exe_dir), CONFIG_FILENAME)
+        if os.path.isfile(parent_cfg):
+            # Found it! Copy it next to the EXE so auto-start & future
+            # launches find it without scanning upwards every time.
+            try:
+                shutil.copy2(parent_cfg, cfg)
+                return cfg
+            except OSError:
+                # Copy failed — read content and write to dist manually
+                try:
+                    with open(parent_cfg, "r", encoding="utf-8") as fh:
+                        content = fh.read()
+                    with open(cfg, "w", encoding="utf-8") as fh:
+                        fh.write(content)
+                    return cfg
+                except OSError:
+                    pass
+                # Last resort: return the dist path; ConfigManager will
+                # create a fresh default config next to the EXE.
+                return cfg
+        # Nothing found — return the default location next to the EXE
+        return cfg
     else:
         base = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base, CONFIG_FILENAME)
+        return os.path.join(base, CONFIG_FILENAME)
 
 
 def parse_hotkey(hotkey_str: str) -> Tuple[set, object]:
@@ -1481,6 +1554,35 @@ class SettingsDialog(QWidget):
         clayout.addWidget(card0)
 
         # ═══════════════════════════════════════════════════════════════
+        # Card 0.5: Desktop shortcut
+        # ═══════════════════════════════════════════════════════════════
+        card_ds, c_ds = self._make_card("桌面快捷方式")
+
+        ds_row = QHBoxLayout()
+        ds_row.setSpacing(12)
+
+        self._desktop_status_lbl = QLabel()
+        self._desktop_status_lbl.setStyleSheet("color: #ccc; font-size: 13px;")
+        ds_row.addWidget(self._desktop_status_lbl, stretch=1)
+
+        self._desktop_toggle_btn = QPushButton()
+        self._desktop_toggle_btn.setMinimumWidth(120)
+        self._desktop_toggle_btn.clicked.connect(self._on_desktop_toggle)
+        ds_row.addWidget(self._desktop_toggle_btn)
+
+        c_ds.addLayout(ds_row)
+
+        ds_desc = QLabel(
+            "在桌面上创建 SmartRing 快捷方式，方便快速启动。"
+        )
+        ds_desc.setStyleSheet("color: #999; font-size: 11px;")
+        ds_desc.setWordWrap(True)
+        c_ds.addWidget(ds_desc)
+
+        self._update_desktop_card()
+        clayout.addWidget(card_ds)
+
+        # ═══════════════════════════════════════════════════════════════
         # Card 1: Hotkey & Trigger Mode
         # ═══════════════════════════════════════════════════════════════
         card1, c1 = self._make_card("快捷键与触发模式")
@@ -2165,6 +2267,100 @@ class SettingsDialog(QWidget):
         self.activateWindow()
         if hasattr(self, '_preview_backdrop') and self._preview_backdrop:
             self._preview_backdrop = None
+
+    # ── desktop shortcut card ──────────────────────────────────────────
+
+    def _update_desktop_card(self) -> None:
+        """Sync the desktop-shortcut card to the filesystem state."""
+        exists = desktop_shortcut_exists()
+        if exists:
+            path = desktop_shortcut_path()
+            self._desktop_status_lbl.setText(f"状态: 已创建  ({path})")
+            self._desktop_toggle_btn.setText("移除桌面快捷方式")
+            self._desktop_toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #5a1a1a; color: #ff8888; "
+                "border-radius: 4px; padding: 6px 14px; font-size: 12px; }"
+                "QPushButton:hover { background-color: #7a2a2a; }"
+            )
+        else:
+            self._desktop_status_lbl.setText("状态: 未创建")
+            self._desktop_toggle_btn.setText("创建桌面快捷方式")
+            self._desktop_toggle_btn.setStyleSheet(
+                "QPushButton { background-color: #1a6d34; color: white; "
+                "border-radius: 4px; padding: 6px 14px; font-size: 12px; }"
+                "QPushButton:hover { background-color: #228b41; }"
+            )
+
+    def _on_desktop_toggle(self) -> None:
+        """Create or remove the desktop shortcut, then refresh the card."""
+        if desktop_shortcut_exists():
+            remove_desktop_shortcut()
+        else:
+            # Reuse the logic from SmartRingApp — create shortcut directly
+            try:
+                import ctypes
+                from ctypes import wintypes
+                CSIDL_DESKTOP = 0
+                buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+                ctypes.windll.shell32.SHGetFolderPathW(None, CSIDL_DESKTOP, None, 0, buf)
+                desktop = buf.value
+            except Exception:
+                desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+
+            lnk_path = os.path.join(desktop, "SmartRing.lnk")
+            work_dir = os.path.dirname(os.path.abspath(
+                sys.executable if getattr(sys, 'frozen', False) else __file__
+            ))
+
+            if getattr(sys, 'frozen', False):
+                exe_path = sys.executable
+                ps_script = (
+                    f'$WshShell = New-Object -ComObject WScript.Shell;'
+                    f'$Shortcut = $WshShell.CreateShortcut("{lnk_path}");'
+                    f'$Shortcut.TargetPath = "{exe_path}";'
+                    f'$Shortcut.WorkingDirectory = "{work_dir}";'
+                    f'$Shortcut.Description = "SmartRing — 环形应用启动器";'
+                    f'$Shortcut.IconLocation = "{exe_path}";'
+                    f'$Shortcut.Save()'
+                )
+            else:
+                pyw_path = os.path.join(work_dir, "SmartRing.pyw")
+                pythonw_path = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+                if not os.path.isfile(pythonw_path):
+                    pythonw_path = "pythonw"
+                icon_path = os.path.join(work_dir, "smartring.ico")
+                ps_script = (
+                    f'$WshShell = New-Object -ComObject WScript.Shell;'
+                    f'$Shortcut = $WshShell.CreateShortcut("{lnk_path}");'
+                    f'$Shortcut.TargetPath = "{pythonw_path}";'
+                    f'$Shortcut.Arguments = \'"{pyw_path}\';'
+                    f'$Shortcut.WorkingDirectory = "{work_dir}";'
+                    f'$Shortcut.Description = "SmartRing — 环形应用启动器";'
+                    f'$Shortcut.IconLocation = "{icon_path}";'
+                    f'$Shortcut.Save()'
+                )
+
+            try:
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps_script],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if result.returncode != 0:
+                    # Fallback: create a simple .bat file
+                    bat_path = os.path.join(desktop, "SmartRing.bat")
+                    script_dir = os.path.dirname(os.path.abspath(__file__))
+                    content = (
+                        '@echo off\r\n'
+                        'chcp 65001 >nul\r\n'
+                        f'cd /d "{script_dir}"\r\n'
+                        f'start "" pythonw "{os.path.join(script_dir, "SmartRing.pyw")}"\r\n'
+                    )
+                    with open(bat_path, "w") as f:
+                        f.write(content)
+            except Exception:
+                pass  # silently fall through — the card will show "未创建"
+
+        self._update_desktop_card()
 
 
 # =============================================================================
@@ -3276,9 +3472,19 @@ class SmartRingApp(QObject):
 
         menu.addSeparator()
 
+        self._desktop_action = QAction(menu)
+        self._desktop_action.triggered.connect(self._toggle_desktop_shortcut)
+        menu.addAction(self._desktop_action)
+
+        menu.addSeparator()
+
         reload_action = QAction("重新加载配置 (&R)", menu)
         reload_action.triggered.connect(self._reload_config)
         menu.addAction(reload_action)
+
+        restart_action = QAction("重启应用", menu)
+        restart_action.triggered.connect(self._restart)
+        menu.addAction(restart_action)
 
         menu.addSeparator()
 
@@ -3291,6 +3497,10 @@ class SmartRingApp(QObject):
         quit_action = QAction("退出 (&Q)", menu)
         quit_action.triggered.connect(self._quit)
         menu.addAction(quit_action)
+
+        # Keep the desktop-action label in sync every time the menu opens
+        menu.aboutToShow.connect(self._update_desktop_action)
+        self._update_desktop_action()
 
         self._tray.setContextMenu(menu)
         self._tray.show()
@@ -3399,6 +3609,142 @@ class SmartRingApp(QObject):
             "右键托盘图标可重新配置。",
             QSystemTrayIcon.Information, 5000,
         )
+
+    def _restart(self) -> None:
+        """Restart SmartRing: launch a new instance, then quit this one."""
+        # Determine how to relaunch
+        if getattr(sys, 'frozen', False):
+            target = sys.executable
+        else:
+            script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SmartRing.pyw")
+            pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            if not os.path.isfile(pythonw):
+                pythonw = "pythonw"
+            target = f'"{pythonw}" "{script}"'
+
+        try:
+            if sys.platform == "win32":
+                # DETACHED_PROCESS = 0x00000008 — fully detach from this process
+                subprocess.Popen(
+                    target,
+                    shell=True,
+                    creationflags=0x00000008,
+                    close_fds=True,
+                )
+            else:
+                subprocess.Popen(target, shell=True, close_fds=True)
+        except Exception as exc:
+            self._tray.showMessage(APP_NAME, f"重启失败: {exc}",
+                                   QSystemTrayIcon.Warning, 3000)
+            return
+
+        self._tray.showMessage(APP_NAME, "正在重启…",
+                               QSystemTrayIcon.Information, 1500)
+        # Brief delay so the tray message renders before we quit
+        QTimer.singleShot(300, self._quit)
+
+    def _create_desktop_shortcut(self) -> None:
+        """Create a SmartRing shortcut (.lnk) on the user's Desktop."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+            CSIDL_DESKTOP = 0
+            buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+            ctypes.windll.shell32.SHGetFolderPathW(None, CSIDL_DESKTOP, None, 0, buf)
+            desktop = buf.value
+        except Exception:
+            desktop = os.path.join(os.path.expanduser("~"), "Desktop")
+
+        lnk_path = os.path.join(desktop, "SmartRing.lnk")
+        work_dir = os.path.dirname(os.path.abspath(
+            sys.executable if getattr(sys, 'frozen', False) else __file__
+        ))
+
+        if getattr(sys, 'frozen', False):
+            # EXE: shortcut points directly to the executable
+            exe_path = sys.executable
+            ps_script = (
+                f'$WshShell = New-Object -ComObject WScript.Shell;'
+                f'$Shortcut = $WshShell.CreateShortcut("{lnk_path}");'
+                f'$Shortcut.TargetPath = "{exe_path}";'
+                f'$Shortcut.WorkingDirectory = "{work_dir}";'
+                f'$Shortcut.Description = "SmartRing — 环形应用启动器";'
+                f'$Shortcut.IconLocation = "{exe_path}";'
+                f'$Shortcut.Save()'
+            )
+        else:
+            # Script mode: shortcut launches pythonw with SmartRing.pyw
+            pyw_path = os.path.join(work_dir, "SmartRing.pyw")
+            pythonw_path = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+            if not os.path.isfile(pythonw_path):
+                pythonw_path = "pythonw"
+            icon_path = os.path.join(work_dir, "smartring.ico")
+            ps_script = (
+                f'$WshShell = New-Object -ComObject WScript.Shell;'
+                f'$Shortcut = $WshShell.CreateShortcut("{lnk_path}");'
+                f'$Shortcut.TargetPath = "{pythonw_path}";'
+                f'$Shortcut.Arguments = \'"{pyw_path}\';'
+                f'$Shortcut.WorkingDirectory = "{work_dir}";'
+                f'$Shortcut.Description = "SmartRing — 环形应用启动器";'
+                f'$Shortcut.IconLocation = "{icon_path}";'
+                f'$Shortcut.Save()'
+            )
+
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_script],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0:
+                self._tray.showMessage(
+                    APP_NAME, f"桌面快捷方式已创建！\n{lnk_path}",
+                    QSystemTrayIcon.Information, 4000,
+                )
+            else:
+                self._create_desktop_bat_fallback(desktop)
+        except Exception:
+            self._create_desktop_bat_fallback(desktop)
+
+    def _create_desktop_bat_fallback(self, desktop: str) -> None:
+        """Fallback: create a .bat launcher on the Desktop."""
+        bat_path = os.path.join(desktop, "SmartRing.bat")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        content = (
+            '@echo off\r\n'
+            'chcp 65001 >nul\r\n'
+            f'cd /d "{script_dir}"\r\n'
+            f'start "" pythonw "{os.path.join(script_dir, "SmartRing.pyw")}"\r\n'
+        )
+        with open(bat_path, "w") as f:
+            f.write(content)
+        self._tray.showMessage(
+            APP_NAME, f"桌面快捷方式已创建！\n{bat_path}",
+            QSystemTrayIcon.Information, 4000,
+        )
+
+    def _update_desktop_action(self) -> None:
+        """Keep the tray menu action in sync with filesystem state."""
+        if desktop_shortcut_exists():
+            self._desktop_action.setText("移除桌面快捷方式 (&D)")
+        else:
+            self._desktop_action.setText("创建桌面快捷方式 (&D)")
+
+    def _toggle_desktop_shortcut(self) -> None:
+        """Create or remove the desktop shortcut based on current state."""
+        if desktop_shortcut_exists():
+            if remove_desktop_shortcut():
+                self._tray.showMessage(
+                    APP_NAME, "桌面快捷方式已移除。",
+                    QSystemTrayIcon.Information, 2000,
+                )
+            else:
+                self._tray.showMessage(
+                    APP_NAME, "移除桌面快捷方式失败。",
+                    QSystemTrayIcon.Warning, 2000,
+                )
+        else:
+            self._create_desktop_shortcut()
+        self._update_desktop_action()
 
     def _quit(self) -> None:
         self._stop_listener()

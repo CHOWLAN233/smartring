@@ -1215,33 +1215,51 @@ class _KeyboardVisual(QWidget):
 
 
 # =============================================================================
-# PreviewBackdrop  —  fullscreen backdrop for ring preview
+# PreviewBackdrop  —  popup window that hosts the ring for preview
 # =============================================================================
 
 class PreviewBackdrop(QWidget):
-    """Fullscreen semi-transparent backdrop that hosts the ring for preview."""
+    """Centered popup window with dark background that hosts the ring preview."""
 
     dismissed = pyqtSignal()
 
-    def __init__(self, ring: RingOverlay, parent=None):
+    def __init__(self, ring: RingOverlay, ring_radius: int, parent=None):
         super().__init__(parent)
         self._ring = ring
+        self._ring_r = ring_radius
+        self._closing = False
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         self.setWindowFlags(
             Qt.FramelessWindowHint
             | Qt.WindowStaysOnTopHint
-            | Qt.Tool
+            | Qt.Dialog
         )
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+        self.setWindowTitle(f"{APP_NAME} — 预览")
 
-        # Cover all screens
-        desktop = QApplication.desktop()
-        if desktop:
-            geom = desktop.screenGeometry(desktop.primaryScreen())
-            self.setGeometry(geom)
+        # Size to fit the ring (2 × outer radius + extra padding for halo + hint)
+        padding = 100
+        win_size = 2 * (self._ring_r + padding)
+        self.setFixedSize(win_size, win_size)
+
+        # Center on primary screen
+        screen_center = QApplication.primaryScreen().geometry().center()
+        self.move(screen_center.x() - win_size // 2,
+                   screen_center.y() - win_size // 2)
+
+        # Dark background
+        self.setStyleSheet(
+            f"QWidget {{ background-color: #1a1a20; border: 1px solid #3a3a42; border-radius: 12px; }}"
+        )
+
+        # Connect ring signals
+        self._ring.dismissed.connect(self._on_ring_dismissed)
+        self._ring.app_launched.connect(lambda _idx: self._on_ring_dismissed())
+
+        self.setMouseTracking(True)
+        self.setFocusPolicy(Qt.StrongFocus)
 
         # Fade in
         self.setWindowOpacity(0.0)
@@ -1251,53 +1269,58 @@ class PreviewBackdrop(QWidget):
         self._fade.setEndValue(1.0)
         self._fade.start()
 
-        # Connect ring signals
-        self._ring.dismissed.connect(self._on_ring_dismissed)
-        self._ring.app_launched.connect(lambda _idx: self._on_ring_dismissed())
-
-        self.setMouseTracking(True)
         self.show()
+        self.setFocus()  # grab focus so Esc works
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        # Dark semi-transparent backdrop
-        painter.fillRect(self.rect(), QColor(10, 10, 14, 210))
 
-        # Subtle hint text at bottom
-        painter.setPen(QColor(180, 180, 185, 120))
-        font = QFont("Microsoft YaHei", 13)
+        # Hint text at bottom
+        painter.setPen(QColor(140, 140, 148, 150))
+        font = QFont("Microsoft YaHei", 12)
         painter.setFont(font)
         painter.drawText(
-            self.rect().adjusted(0, 0, 0, -40),
+            self.rect().adjusted(0, 0, 0, -18),
             Qt.AlignHCenter | Qt.AlignBottom,
             "点击任意位置 或 按 Esc 关闭预览",
         )
         painter.end()
 
     def mousePressEvent(self, event) -> None:
-        self._on_ring_dismissed()
+        self._dismiss()
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Escape:
-            self._on_ring_dismissed()
+            self._dismiss()
+        else:
+            super().keyPressEvent(event)
 
     def _on_ring_dismissed(self) -> None:
-        if self._ring and self._ring.isVisible():
-            self._ring.hide_ring()
-        # Fade out backdrop then close
-        self._fade.setStartValue(self.windowOpacity())
-        self._fade.setEndValue(0.0)
-        self._fade.finished.connect(self._do_close)
-        self._fade.start()
+        """Called when the ring itself is dismissed (via its own Esc handling)."""
+        if not self._closing:
+            self._dismiss()
+
+    def _dismiss(self) -> None:
+        """Hide ring and close backdrop."""
+        if self._closing:
+            return
+        self._closing = True
+        if self._ring:
+            try:
+                if self._ring.isVisible():
+                    self._ring.hide_ring()
+            except RuntimeError:
+                pass
+        self._do_close()
 
     def _do_close(self) -> None:
-        try:
-            self._fade.finished.disconnect(self._do_close)
-        except Exception:
-            pass
-        self._ring.deleteLater()
-        self._ring = None
+        if self._ring:
+            try:
+                self._ring.deleteLater()
+            except RuntimeError:
+                pass
+            self._ring = None
         self.dismissed.emit()
         self.close()
         self.deleteLater()
@@ -1959,7 +1982,7 @@ class SettingsDialog(QWidget):
             self.close()
 
     def _preview_ring_live(self) -> None:
-        """Show the real ring overlay on a fullscreen backdrop for preview."""
+        """Show the real ring overlay in a centered popup window for preview."""
         self.hide()
 
         apps = []
@@ -1993,13 +2016,15 @@ class SettingsDialog(QWidget):
             show_labels=show_labels,
             preview_mode=True,
         )
-        # Show ring at screen center, inside the backdrop
-        screen_center = QApplication.primaryScreen().geometry().center()
-        preview_ring.show_at(screen_center)
 
-        # Wrap in fullscreen backdrop
-        self._preview_backdrop = PreviewBackdrop(preview_ring)
+        # Create backdrop popup first, then position ring at its center
+        self._preview_backdrop = PreviewBackdrop(preview_ring, ring_r)
         self._preview_backdrop.dismissed.connect(self._on_preview_dismissed)
+
+        # Position ring at the center of the backdrop window
+        backdrop_center = self._preview_backdrop.rect().center()
+        global_backdrop_center = self._preview_backdrop.mapToGlobal(backdrop_center)
+        preview_ring.show_at(global_backdrop_center)
 
     def _on_preview_dismissed(self) -> None:
         """Re-show settings dialog after preview backdrop is dismissed."""

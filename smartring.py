@@ -646,6 +646,13 @@ class RingOverlay(QWidget):
         self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setAutoFillBackground(False)
+
+        # Force transparent background at every level
+        self.setStyleSheet("background: transparent;")
+        pal = self.palette()
+        pal.setColor(self.backgroundRole(), Qt.transparent)
+        self.setPalette(pal)
+
         self.setWindowTitle(APP_NAME)
         self.setMouseTracking(True)
 
@@ -882,6 +889,10 @@ class RingOverlay(QWidget):
             return  # not yet positioned — skip painting
         painter = QPainter(self)
         try:
+            # Clear entire surface to fully transparent (eliminates faint square bg)
+            painter.setCompositionMode(QPainter.CompositionMode_Source)
+            painter.fillRect(self.rect(), QColor(0, 0, 0, 0))
+            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
             self._do_paint(painter)
         except Exception as exc:
             import traceback

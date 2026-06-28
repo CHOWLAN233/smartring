@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartRing — Circular Application Launcher</title>
+<style>
+  :root {
+    --bg: #1a1a20;
+    --card: #222228;
+    --text: #d0d0d5;
+    --accent: #0078D4;
+    --border: #3a3a42;
+    --ring-bg: #1e1e26;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+    line-height: 1.7;
+  }
+  .hero {
+    text-align: center;
+    padding: 80px 20px 60px;
+    background: linear-gradient(180deg, #0d0d14 0%, var(--bg) 100%);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero h1 {
+    font-size: 3rem;
+    font-weight: 800;
+    color: #fff;
+    letter-spacing: -0.5px;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero p {
+    font-size: 1.2rem;
+    color: #999;
+    margin-top: 12px;
+    max-width: 560px;
+    margin-inline: auto;
+  }
+  .ring-preview {
+    width: 260px; height: 260px;
+    margin: 36px auto 0;
+    position: relative;
+  }
+  .ring-preview canvas { width: 100%; height: 100%; }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 40px 24px; }
+  .section { margin-bottom: 48px; }
+  .section h2 {
+    font-size: 1.6rem; color: #fff; margin-bottom: 16px;
+    padding-bottom: 8px; border-bottom: 2px solid var(--accent);
+    display: inline-block;
+  }
+
+  .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .feature-card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 20px;
+  }
+  .feature-card h3 { color: #fff; font-size: 1rem; margin-bottom: 6px; }
+  .feature-card p { color: #999; font-size: 0.9rem; }
+
+  .config-table { width: 100%; border-collapse: collapse; }
+  .config-table th, .config-table td {
+    text-align: left; padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .config-table th { color: #999; font-size: 0.8rem; text-transform: uppercase; }
+  .config-table td { font-family: "Consolas", "Courier New", monospace; font-size: 0.9rem; }
+  .config-table tr:hover { background: rgba(255,255,255,0.02); }
+
+  .download-card {
+    background: var(--card); border: 1px solid var(--accent);
+    border-radius: 12px; padding: 28px; text-align: center;
+  }
+  .download-card h3 { color: #fff; margin-bottom: 8px; }
+  .btn {
+    display: inline-block; background: var(--accent);
+    color: #fff; text-decoration: none;
+    border-radius: 6px; padding: 10px 28px;
+    font-weight: 600; font-size: 1rem;
+    margin: 8px 4px; transition: background .15s;
+  }
+  .btn:hover { background: #1084d8; }
+  .btn-outline {
+    background: transparent; border: 1px solid var(--accent);
+    color: var(--accent);
+  }
+  .btn-outline:hover { background: rgba(0,120,212,0.1); }
+
+  code {
+    background: #2b2b30; color: #f0c060;
+    padding: 2px 8px; border-radius: 4px; font-size: 0.9em;
+  }
+  pre {
+    background: #111118; color: #e0e0e0;
+    padding: 18px 22px; border-radius: 8px;
+    overflow-x: auto; font-size: 0.85rem;
+    border: 1px solid var(--border);
+  }
+
+  footer {
+    text-align: center; padding: 32px 20px;
+    color: #666; font-size: 0.85rem;
+    border-top: 1px solid var(--border);
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  .badge { display: inline-flex; align-items: center; gap: 6px; margin: 4px; }
+  .tag {
+    display: inline-block; background: #333; color: #aaa;
+    padding: 2px 10px; border-radius: 20px; font-size: 0.8rem;
+  }
+  .tag.accent { background: rgba(0,120,212,0.2); color: #5bafff; }
+
+  @media (max-width: 600px) {
+    .hero h1 { font-size: 2rem; }
+    .features { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<section class="hero">
+  <h1>Smart<span>Ring</span></h1>
+  <p>受罗技 Action Ring 启发的环形应用启动器 &mdash; 按下快捷键，圆环在光标周围展开，移动鼠标选择应用，松开即启动。</p>
+  <div class="ring-preview">
+    <canvas id="ringCanvas"></canvas>
+  </div>
+  <div style="margin-top:20px;">
+    <span class="tag accent">PyQt5</span>
+    <span class="tag">Windows</span>
+    <span class="tag">Python 3.7+</span>
+    <span class="tag">MIT</span>
+  </div>
+</section>
+
+<!-- Features -->
+<div class="container">
+<div class="section">
+  <h2>功能</h2>
+  <div class="features">
+    <div class="feature-card">
+      <h3>快捷键唤出</h3>
+      <p>默认 F12，可配置任意组合键（Ctrl/Alt/Shift/Win），适配鼠标侧键映射。</p>
+    </div>
+    <div class="feature-card">
+      <h3>光标环形菜单</h3>
+      <p>应用图标圆形排列在光标周围，自动提取真实 .exe 图标，含柔和阴影。</p>
+    </div>
+    <div class="feature-card">
+      <h3>鼠标指向选择</h3>
+      <p>移动鼠标到对应扇区自动高亮，图标放大 + 标签高亮，松开即启动。</p>
+    </div>
+    <div class="feature-card">
+      <h3>Hold / Toggle 双模式</h3>
+      <p>Hold：按住唤出、松开启动。Toggle：按一下显示、再按隐藏。</p>
+    </div>
+    <div class="feature-card">
+      <h3>开机自启</h3>
+      <p>最高优先级设置项，随 Windows 自动启动，确保随时可用。</p>
+    </div>
+    <div class="feature-card">
+      <h3>可自定义外观</h3>
+      <p>8 种预设主题色 + 自定义色值，圆环尺寸、图标大小、背景色均可调，带实时预览。</p>
+    </div>
+    <div class="feature-card">
+      <h3>键盘模拟器</h3>
+      <p>设置面板内置模拟键盘，输入快捷键时自动高亮对应按键。</p>
+    </div>
+    <div class="feature-card">
+      <h3>快捷键冲突提醒</h3>
+      <p>检测 F12 等常用系统快捷键并提供冲突警告。</p>
+    </div>
+    <div class="feature-card">
+      <h3>图形化设置界面</h3>
+      <p>右键托盘图标打开设置面板，实时预览调整参数，保存后可预览真实圆环效果。</p>
+    </div>
+    <div class="feature-card">
+      <h3>一键重置</h3>
+      <p>托盘菜单提供「初始化」选项，两次确认后恢复出厂默认设置。</p>
+    </div>
+  </div>
+</div>
+
+<!-- Download -->
+<div class="section">
+  <h2>下载</h2>
+  <div class="download-card">
+    <h3>SmartRing.exe</h3>
+    <p style="color:#999;">独立可执行文件，无需安装 Python</p>
+    <p style="margin:16px 0;">
+      <a class="btn" href="https://github.com/CHOWLAN233/smartring/releases/latest">Latest Release</a>
+      <a class="btn btn-outline" href="https://github.com/CHOWLAN233/smartring">GitHub</a>
+    </p>
+    <p style="color:#666; font-size:0.8rem;">下载 SmartRing.exe 双击运行，首次启动自动弹出设置向导。</p>
+  </div>
+</div>
+
+<!-- Quick Start -->
+<div class="section">
+  <h2>快速开始</h2>
+  <p style="margin-bottom:12px;"><strong>方式 1：直接使用 EXE（推荐）</strong></p>
+  <p>下载 <code>dist/SmartRing.exe</code>，双击运行。</p>
+  <p style="margin:16px 0 12px;"><strong>方式 2：Python 源码</strong></p>
+  <pre># 安装依赖
+pip install -r requirements.txt
+
+# 启动（无控制台窗口）
+pythonw SmartRing.pyw
+
+# 或双击 run.bat</pre>
+</div>
+
+<!-- Config -->
+<div class="section">
+  <h2>配置项</h2>
+  <table class="config-table">
+    <tr><th>配置项</th><th>说明</th><th>默认值</th></tr>
+    <tr><td>auto_start</td><td>开机自启（最高优先级）</td><td>false</td></tr>
+    <tr><td>hotkey</td><td>快捷键</td><td>f12</td></tr>
+    <tr><td>mode</td><td>触发模式 (hold / toggle)</td><td>hold</td></tr>
+    <tr><td>theme</td><td>界面主题 (light / dark)</td><td>dark</td></tr>
+    <tr><td>accent_color</td><td>高亮主题色</td><td>#0078D4</td></tr>
+    <tr><td>bg_color</td><td>圆环背景色</td><td>#1e1e26</td></tr>
+    <tr><td>ring_radius</td><td>外环半径 (px)</td><td>190</td></tr>
+    <tr><td>center_radius</td><td>中心半径 (px)</td><td>58</td></tr>
+    <tr><td>icon_size</td><td>图标大小 (px)</td><td>38</td></tr>
+    <tr><td>animation_duration</td><td>动画时长 (ms)</td><td>220</td></tr>
+    <tr><td>show_labels</td><td>显示应用标签</td><td>true</td></tr>
+  </table>
+</div>
+
+<!-- Mouse Side Button -->
+<div class="section">
+  <h2>鼠标侧键设置</h2>
+  <ol style="color:#999; padding-left:20px;">
+    <li>打开 Logitech G Hub / Options</li>
+    <li>选择你的鼠标</li>
+    <li>将侧键映射为键盘按键 <code>F12</code>（或你自定义的快捷键）</li>
+    <li>按下侧键即可唤出 SmartRing</li>
+  </ol>
+</div>
+
+</div>
+
+<footer>
+  SmartRing &copy; 2026 &mdash;
+  <a href="https://github.com/CHOWLAN233/smartring">GitHub</a> &middot;
+  <a href="https://github.com/CHOWLAN233/smartring/blob/master/README.md">README</a> &middot;
+  MIT License
+</footer>
+
+<script>
+// Draw a live ring preview on canvas
+(function() {
+  const canvas = document.getElementById('ringCanvas');
+  const dpr = window.devicePixelRatio || 1;
+  const size = 260;
+  canvas.width = size * dpr;
+  canvas.height = size * dpr;
+  canvas.style.width = size + 'px';
+  canvas.style.height = size + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  const cx = size / 2, cy = size / 2;
+  const ringR = 95, hubR = 29, iconR = (ringR + hubR) / 2;
+  const apps = 6;
+
+  // Halo
+  const halo = ctx.createRadialGradient(cx, cy, ringR - 10, cx, cy, ringR + 50);
+  halo.addColorStop(0, 'rgba(20,20,28,0.25)');
+  halo.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(cx, cy, ringR + 50, 0, Math.PI * 2); ctx.fill();
+
+  // Ring body
+  const ringGrad = ctx.createRadialGradient(cx, cy, hubR, cx, cy, ringR);
+  ringGrad.addColorStop(0, 'rgba(55,55,65,0.94)');
+  ringGrad.addColorStop(0.5, 'rgba(40,40,48,0.92)');
+  ringGrad.addColorStop(1, 'rgba(28,28,34,0.88)');
+  ctx.fillStyle = ringGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+  ctx.arc(cx, cy, hubR, 0, Math.PI * 2, true);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Dividers
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 1;
+  for (let i = 0; i < apps; i++) {
+    const a = 2 * Math.PI * i / apps - Math.PI / 2 - Math.PI / apps;
+    ctx.beginPath();
+    ctx.moveTo(cx + hubR * Math.cos(a), cy + hubR * Math.sin(a));
+    ctx.lineTo(cx + ringR * Math.cos(a), cy + ringR * Math.sin(a));
+    ctx.stroke();
+  }
+
+  // Hub
+  const hubGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, hubR);
+  hubGrad.addColorStop(0, 'rgba(65,65,75,0.97)');
+  hubGrad.addColorStop(1, 'rgba(42,42,50,0.95)');
+  ctx.fillStyle = hubGrad;
+  ctx.beginPath(); ctx.arc(cx, cy, hubR, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Accent dot
+  ctx.fillStyle = '#0078D4';
+  ctx.beginPath(); ctx.arc(cx, cy, hubR * 0.35, 0, Math.PI * 2); ctx.fill();
+
+  // App icons (colored dots)
+  const hues = [210, 120, 0, 280, 45, 170];
+  for (let i = 0; i < apps; i++) {
+    const a = 2 * Math.PI * i / apps - Math.PI / 2;
+    const ix = cx + iconR * Math.cos(a);
+    const iy = cy + iconR * Math.sin(a);
+    ctx.fillStyle = `hsl(${hues[i]}, 55%, 48%)`;
+    ctx.beginPath(); ctx.roundRect(ix - 11, iy - 11, 22, 22, 6); ctx.fill();
+  }
+})();
+</script>
+</body>
+</html>

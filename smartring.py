@@ -1492,10 +1492,23 @@ class SettingsDialog(QWidget):
             "QLineEdit { font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; }"
         )
         self._hotkey_edit.textChanged.connect(
-            lambda t: self._keyboard_widget.set_hotkey(t)
+            lambda t: (self._keyboard_widget.set_hotkey(t),
+                       self._check_hotkey_conflict(t))
         )
         hk_row.addWidget(self._hotkey_edit, stretch=1)
         c1.addLayout(hk_row)
+
+        # Conflict warning label (hidden by default)
+        self._conflict_warn = QLabel()
+        self._conflict_warn.setWordWrap(True)
+        self._conflict_warn.setStyleSheet(
+            "QLabel { color: #ff8c42; font-size: 12px; "
+            "background-color: rgba(255,140,66,0.08); "
+            "border: 1px solid rgba(255,140,66,0.25); "
+            "border-radius: 4px; padding: 6px 10px; }"
+        )
+        self._conflict_warn.hide()
+        c1.addWidget(self._conflict_warn)
 
         # Row 2: visual keyboard (full width)
         self._keyboard_widget = _KeyboardVisual()
@@ -1906,6 +1919,66 @@ class SettingsDialog(QWidget):
             pass
         self._update_settings_preview()
 
+    # ── hotkey conflict detection ────────────────────────────────────
+
+    # Known conflicting keys and their common bindings
+    _CONFLICTS = {
+        "f12": "浏览器开发者工具 (F12)",
+        "f5":  "浏览器刷新 (F5)",
+        "f11": "浏览器全屏 (F11)",
+        "f1":  "帮助/浏览器帮助 (F1)",
+        "f3":  "浏览器搜索 (F3)",
+        "f4":  "关闭窗口/IDE 运行",
+        "f6":  "浏览器地址栏聚焦 (F6)",
+        "f7":  "浏览器/IDE 拼写检查 (F7)",
+        "f10": "菜单栏焦点 (F10)",
+        "ctrl+w": "关闭浏览器标签页",
+        "ctrl+t": "新建浏览器标签页",
+        "ctrl+n": "新建浏览器窗口",
+        "ctrl+f": "搜索",
+        "ctrl+d": "添加书签",
+        "ctrl+h": "浏览器历史记录",
+        "ctrl+j": "浏览器下载",
+        "ctrl+shift+t": "恢复关闭的标签页",
+        "ctrl+shift+n": "隐私模式窗口",
+        "alt+f4": "关闭当前窗口",
+        "alt+tab": "切换窗口",
+        "win": "开始菜单",
+        "win+d": "显示桌面",
+        "win+e": "文件资源管理器",
+        "win+r": "运行对话框",
+        "win+l": "锁定屏幕",
+        "win+tab": "任务视图",
+        "ctrl+esc": "开始菜单",
+        "ctrl+shift+esc": "任务管理器",
+        "ctrl+alt+del": "安全选项",
+        "printscreen": "截图工具",
+        "prtsc": "截图工具",
+    }
+
+    def _check_hotkey_conflict(self, hotkey_str: str) -> None:
+        """Show a warning if the hotkey conflicts with a known system shortcut."""
+        key = hotkey_str.strip().lower()
+        if not key:
+            self._conflict_warn.hide()
+            return
+
+        # Also check if this is f12 without modifiers (most common issue)
+        if key in self._CONFLICTS:
+            self._conflict_warn.setText(
+                f"⚠ 冲突提醒：「{hotkey_str.upper()}」通常被 {self._CONFLICTS[key]} 占用。\n"
+                f"建议改用组合键，如 Ctrl+F12 或 Alt+F12，避免干扰正常操作。"
+            )
+            self._conflict_warn.show()
+        elif key == "f12":
+            self._conflict_warn.setText(
+                "⚠ F12 在浏览器中会打开开发者工具。\n"
+                "建议改用 Ctrl+F12 或其他组合键。"
+            )
+            self._conflict_warn.show()
+        else:
+            self._conflict_warn.hide()
+
     def _update_settings_preview(self) -> None:
         """Push current inputs to the live ring preview."""
         if not hasattr(self, '_settings_preview'):
@@ -1919,6 +1992,7 @@ class SettingsDialog(QWidget):
 
     def _load(self) -> None:
         self._hotkey_edit.setText(self._config.hotkey)
+        self._check_hotkey_conflict(self._config.hotkey)
         # Set combo box to match current mode
         mode_idx = self._mode_combo.findData(self._config.mode)
         if mode_idx >= 0:

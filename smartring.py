@@ -1060,7 +1060,7 @@ class SettingsDialog(QWidget):
         outer.setContentsMargins(24, 20, 24, 20)
 
         # Title
-        title = QLabel(f"<h2 style='color:#e0e0e0;'>⚙ {APP_NAME} 设置</h2>")
+        title = QLabel(f"<h2 style='color:#e0e0e0;'>{APP_NAME} 设置</h2>")
         outer.addWidget(title)
         outer.addSpacing(16)
 
@@ -1076,8 +1076,33 @@ class SettingsDialog(QWidget):
         clayout.setSpacing(14)
         clayout.setContentsMargins(0, 0, 0, 0)
 
+        # ── Card: Auto-start (highest priority) ───────────────────
+        card0 = self._make_card("开机自启 (最高优先级)")
+        auto_layout = QVBoxLayout()
+        auto_row = QHBoxLayout()
+        self._auto_start_cb = QCheckBox("随 Windows 自动启动 SmartRing")
+        self._auto_start_cb.setToolTip(
+            "勾选后 SmartRing 会在 Windows 启动时自动运行。\n"
+            "此设置为最高优先级，建议保持开启以确保随时可用。"
+        )
+        self._auto_start_cb.setStyleSheet(
+            "QCheckBox { font-size: 15px; font-weight: bold; color: #e0e0e0; spacing: 10px; }"
+            "QCheckBox::indicator { width: 22px; height: 22px; }"
+        )
+        auto_row.addWidget(self._auto_start_cb)
+        auto_row.addStretch()
+        auto_layout.addLayout(auto_row)
+        auto_desc = QLabel(
+            "启动项注册在 Windows 启动文件夹中，可通过任务管理器的「启动」选项卡管理。"
+        )
+        auto_desc.setStyleSheet("color: #999; font-size: 11px; margin-left: 32px;")
+        auto_desc.setWordWrap(True)
+        auto_layout.addWidget(auto_desc)
+        card0.setLayout(auto_layout)
+        clayout.addWidget(card0)
+
         # ── Card: Hotkey & Mode ──────────────────────────────────────
-        card1 = self._make_card("⌨ 快捷键设置")
+        card1 = self._make_card("快捷键设置")
         grid1 = QGridLayout()
         grid1.setSpacing(10)
         grid1.addWidget(QLabel("快捷键组合:"), 0, 0)
@@ -1094,11 +1119,6 @@ class SettingsDialog(QWidget):
                                     "toggle = 按一下切换显示/隐藏")
         grid1.addWidget(self._mode_combo, 0, 3)
 
-        # Auto-start checkbox
-        self._auto_start_cb = QCheckBox("开机自启")
-        self._auto_start_cb.setToolTip("勾选后 SmartRing 会随 Windows 启动")
-        grid1.addWidget(self._auto_start_cb, 0, 4)
-
         # Show labels checkbox
         grid1.addWidget(QLabel("显示标签:"), 1, 0)
         self._show_labels_cb = QCheckBox("在圆环中显示应用名称")
@@ -1110,7 +1130,7 @@ class SettingsDialog(QWidget):
         clayout.addWidget(card1)
 
         # ── Card: Appearance (with live preview) ──────────────────────
-        card2 = self._make_card("🎨 外观设置")
+        card2 = self._make_card("外观设置")
         app_layout = QHBoxLayout()
         app_layout.setSpacing(16)
 
@@ -1153,6 +1173,14 @@ class SettingsDialog(QWidget):
             cr = self._center_spin.value()
             sz = self._icon_spin.value()
             acc = self._color_edit.text().strip() or "#0078D4"
+
+            # Dynamically clamp center_radius < ring_radius (leave at least 20px segment)
+            max_center = max(20, rr - 20)
+            self._center_spin.setMaximum(max_center)
+            # Dynamically clamp icon_size <= segment width
+            max_icon = max(16, rr - self._center_spin.value())
+            self._icon_spin.setMaximum(max_icon)
+
             if hasattr(self, '_settings_preview'):
                 self._settings_preview.set_params(rr, cr, sz, acc)
 
@@ -1190,7 +1218,7 @@ class SettingsDialog(QWidget):
         clayout.addWidget(card2)
 
         # ── Card: App list ───────────────────────────────────────────
-        card3 = self._make_card("📱 应用程序列表")
+        card3 = self._make_card("应用程序列表")
         app_outer = QVBoxLayout()
         app_outer.setSpacing(6)
 
@@ -1234,7 +1262,7 @@ class SettingsDialog(QWidget):
         btn_row = QHBoxLayout()
         btn_row.addStretch()
 
-        save_btn = QPushButton("💾 保存设置")
+        save_btn = QPushButton("保存设置")
         save_btn.setDefault(True)
         save_btn.setMinimumWidth(120)
         save_btn.setStyleSheet(
@@ -1433,15 +1461,45 @@ class SettingsDialog(QWidget):
             QMessageBox.warning(self, "快捷键格式错误", str(e))
             return
 
+        ring_r = self._ring_spin.value()
+        center_r = self._center_spin.value()
+        icon_sz = self._icon_spin.value()
+
+        # ── Size validation ─────────────────────────────────────────
+        if center_r >= ring_r:
+            QMessageBox.warning(
+                self, "尺寸不合理",
+                f"中心半径 ({center_r}px) 必须小于外环半径 ({ring_r}px)。\n\n"
+                "请调整后再保存。"
+            )
+            return
+
+        segment_width = ring_r - center_r
+        if icon_sz > segment_width:
+            QMessageBox.warning(
+                self, "尺寸不合理",
+                f"图标大小 ({icon_sz}px) 超过了圆环段宽度 ({segment_width}px)。\n\n"
+                f"圆环段宽度 = 外环半径({ring_r}px) - 中心半径({center_r}px) = {segment_width}px\n"
+                "图标无法放入圆环段内，请减小图标大小或增大圆环段宽度。"
+            )
+            return
+
+        if icon_sz < 12:
+            QMessageBox.warning(
+                self, "尺寸不合理",
+                f"图标大小 ({icon_sz}px) 过小，无法正常显示。\n请至少设为 12px。"
+            )
+            return
+
         self._config.data["hotkey"] = hotkey
         self._config.data["mode"] = self._mode_combo.text().strip() or "hold"
         self._config.data["accent_color"] = self._color_edit.text().strip()
         self._config.data["auto_start"] = self._auto_start_cb.isChecked()
         self._config.data["show_labels"] = self._show_labels_cb.isChecked()
 
-        self._config.data["ring_radius"] = self._ring_spin.value()
-        self._config.data["center_radius"] = self._center_spin.value()
-        self._config.data["icon_size"] = self._icon_spin.value()
+        self._config.data["ring_radius"] = ring_r
+        self._config.data["center_radius"] = center_r
+        self._config.data["icon_size"] = icon_sz
         try:
             self._config.data["animation_duration"] = int(self._anim_edit.text() or "220")
         except ValueError:
@@ -1572,6 +1630,24 @@ class SpinBox(QWidget):
 
     def value(self) -> int:
         return self._val
+
+    def setMaximum(self, max_val: int) -> None:
+        """Dynamically change the maximum allowed value."""
+        self._max = max_val
+        if self._val > self._max:
+            self._val = self._max
+            self._edit.blockSignals(True)
+            self._edit.setText(str(self._val))
+            self._edit.blockSignals(False)
+
+    def setMinimum(self, min_val: int) -> None:
+        """Dynamically change the minimum allowed value."""
+        self._min = min_val
+        if self._val < self._min:
+            self._val = self._min
+            self._edit.blockSignals(True)
+            self._edit.setText(str(self._val))
+            self._edit.blockSignals(False)
 
     def set_theme(self, theme: str) -> None:
         """Switch button/input colours for light vs dark theme."""
@@ -1836,7 +1912,7 @@ class SetupWizard(QDialog):
         self._next_btn.clicked.connect(self._go_next)
         nav.addWidget(self._next_btn)
 
-        self._finish_btn = QPushButton("🎯 开始使用 SmartRing")
+        self._finish_btn = QPushButton("开始使用 SmartRing")
         self._finish_btn.setMinimumWidth(180)
         self._finish_btn.setVisible(False)
         self._finish_btn.clicked.connect(self._finish)
@@ -1936,14 +2012,14 @@ class SetupWizard(QDialog):
         mode_row = QHBoxLayout()
         mode_row.setSpacing(16)
 
-        self._mode_hold = QPushButton("🖐 Hold 模式\n按住唤出，松开启动")
+        self._mode_hold = QPushButton("Hold 模式\n按住唤出，松开启动")
         self._mode_hold.setCheckable(True)
         self._mode_hold.setChecked(True)
         self._mode_hold.setMinimumHeight(56)
         self._mode_hold.clicked.connect(lambda: self._select_mode("hold"))
         mode_row.addWidget(self._mode_hold)
 
-        self._mode_toggle = QPushButton("🔘 Toggle 模式\n按一下显示，再按隐藏")
+        self._mode_toggle = QPushButton("Toggle 模式\n按一下显示，再按隐藏")
         self._mode_toggle.setCheckable(True)
         self._mode_toggle.setMinimumHeight(56)
         self._mode_toggle.clicked.connect(lambda: self._select_mode("toggle"))
@@ -2196,10 +2272,10 @@ class SetupWizard(QDialog):
 
         theme_row = QHBoxLayout()
         theme_row.setSpacing(10)
-        self._theme_light = QPushButton("☀ 浅色")
+        self._theme_light = QPushButton("浅色")
         self._theme_light.setCheckable(True)
         self._theme_light.setMinimumHeight(34)
-        self._theme_dark = QPushButton("🌙 深色")
+        self._theme_dark = QPushButton("深色")
         self._theme_dark.setCheckable(True)
         self._theme_dark.setMinimumHeight(34)
 
@@ -2357,6 +2433,17 @@ class SetupWizard(QDialog):
         tip.setAlignment(Qt.AlignCenter)
         layout.addWidget(tip)
 
+        layout.addSpacing(12)
+
+        # Auto-start checkbox
+        self._wiz_auto_start = QCheckBox("开机自启 — 随 Windows 自动启动 SmartRing (推荐)")
+        self._wiz_auto_start.setChecked(self._config_data.get("auto_start", False))
+        self._wiz_auto_start.setStyleSheet(
+            "QCheckBox { font-size: 14px; font-weight: bold; color: #333; }"
+            "QCheckBox::indicator { width: 20px; height: 20px; }"
+        )
+        layout.addWidget(self._wiz_auto_start, alignment=Qt.AlignCenter)
+
         layout.addStretch()
         return page
 
@@ -2438,6 +2525,10 @@ class SetupWizard(QDialog):
             self._config_data["icon_size"] = self._icon_spin.value()
         # Theme is already stored in _config_data["theme"] by _set_theme
 
+        # Save auto_start preference from wizard checkbox
+        if hasattr(self, '_wiz_auto_start'):
+            self._config_data["auto_start"] = self._wiz_auto_start.isChecked()
+
         # Write config.json
         cfg_path = config_path()
         try:
@@ -2446,6 +2537,9 @@ class SetupWizard(QDialog):
         except OSError:
             QMessageBox.warning(self, "错误", "无法保存配置文件，请检查磁盘权限。")
             return
+
+        # Apply auto-start immediately
+        set_auto_start(self._config_data.get("auto_start", False))
 
         self.accept()
 
@@ -2493,6 +2587,9 @@ class SmartRingApp(QObject):
         self._poll_timer.timeout.connect(self._poll)
         self._poll_timer.start(25)
 
+        # Apply auto-start setting on every launch (highest priority)
+        set_auto_start(self._config.auto_start)
+
         # Startup notification
         mode_desc = "按住唤出，松开启动" if self._config.mode == "hold" else "按一下切换"
         self._tray.showMessage(
@@ -2514,19 +2611,19 @@ class SmartRingApp(QObject):
             QMenu::item:selected { background-color: #0078D4; }
         """)
 
-        settings_action = QAction("⚙ 设置 (&S)", menu)
+        settings_action = QAction("设置 (&S)", menu)
         settings_action.triggered.connect(self._open_settings)
         menu.addAction(settings_action)
 
         menu.addSeparator()
 
-        reload_action = QAction("🔄 重新加载配置 (&R)", menu)
+        reload_action = QAction("重新加载配置 (&R)", menu)
         reload_action.triggered.connect(self._reload_config)
         menu.addAction(reload_action)
 
         menu.addSeparator()
 
-        quit_action = QAction("❌ 退出 (&Q)", menu)
+        quit_action = QAction("退出 (&Q)", menu)
         quit_action.triggered.connect(self._quit)
         menu.addAction(quit_action)
 

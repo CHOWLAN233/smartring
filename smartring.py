@@ -886,13 +886,9 @@ class RingOverlay(QWidget):
 
     def paintEvent(self, _event) -> None:
         if not hasattr(self, '_ring_center'):
-            return  # not yet positioned — skip painting
+            return
         painter = QPainter(self)
         try:
-            # Clear entire surface to fully transparent (eliminates faint square bg)
-            painter.setCompositionMode(QPainter.CompositionMode_Source)
-            painter.fillRect(self.rect(), QColor(0, 0, 0, 0))
-            painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
             self._do_paint(painter)
         except Exception as exc:
             import traceback
@@ -911,14 +907,15 @@ class RingOverlay(QWidget):
         acc = self._accent
         bg = self._bg
 
-        # ── 1. Outer soft halo ───────────────────────────────────────
+        # ── 1. Outer soft halo — must reach alpha=0 well inside widget bounds ─
         halo = QRadialGradient(cx, cy, self._ring_r + 80)
         halo.setColorAt(0.0, QColor(
             max(0, bg.red() - 20), max(0, bg.green() - 20),
             max(0, bg.blue() - 20), 45))
-        halo.setColorAt(0.8, QColor(
+        halo.setColorAt(0.55, QColor(
             max(0, bg.red() - 25), max(0, bg.green() - 25),
-            max(0, bg.blue() - 25), 18))
+            max(0, bg.blue() - 25), 20))
+        halo.setColorAt(0.72, QColor(0, 0, 0, 0))
         halo.setColorAt(1.0, QColor(0, 0, 0, 0))
         painter.setBrush(QBrush(halo))
         painter.setPen(Qt.NoPen)

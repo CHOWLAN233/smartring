@@ -234,140 +234,129 @@
 </footer>
 
 <script>
-/* ═══════════════════════════════════════════════════
-   Static ring preview — exact rendering of app defaults:
-   ring_radius=190, center_radius=58, icon_size=38
+/* Ring preview - exact replica of smartring.py _do_paint
+   Defaults: ring_radius=190, center_radius=58, icon_size=38
    bg_color=#1e1e26, accent_color=#0078D4, show_labels=True
-   Uses identical gradient stops & colour math as smartring.py
-   ═══════════════════════════════════════════════════ */
+   All gradient stops, alphas, colours match app identically */
 (function(){
-const canvas = document.getElementById('ringCanvas');
-const dpr = Math.min(window.devicePixelRatio||1, 2);
-const W = 340, H = 340;
-canvas.width = W * dpr; canvas.height = H * dpr;
-canvas.style.width = W+'px'; canvas.style.height = H+'px';
-const ctx = canvas.getContext('2d');
-ctx.scale(dpr, dpr);
+const C=document.getElementById('ringCanvas');
+const dpr=Math.min(window.devicePixelRatio||1,2);
+const W=340,H=340;
+C.width=W*dpr;C.height=H*dpr;C.style.width=W+'px';C.style.height=H+'px';
+const X=C.getContext('2d');X.scale(dpr,dpr);
 
-// App defaults (scaled x0.5 for preview)
-const RING_R = 95, HUB_R = 29, ICON_SZ = 19;
-const CX = W/2, CY = H/2;
-const apps = [
-  {name:'Notepad',    hue:210},
-  {name:'Calculator', hue:120},
-  {name:'Explorer',   hue:0},
-  {name:'Terminal',   hue:280},
-  {name:'Browser',    hue:45},
-  {name:'VS Code',    hue:170},
+const RR=95,CR=29,IS=19;          // ring_r, center_r, icon_size (x0.5)
+const CX=W/2,CY=H/2;
+const apps=[
+  {n:'Notepad',    h:210},
+  {n:'Calculator', h:120},
+  {n:'Explorer',   h:0},
+  {n:'Terminal',   h:280},
+  {n:'Browser',    h:45},
+  {n:'VS Code',    h:170},
 ];
-const N = apps.length;
-const iconR = (RING_R + HUB_R) / 2;   // matches app: (ring_r + center_r) // 2
-const labelR = RING_R - 7;            // matches app: ring_r - 14  (*0.5)
-const bg = {r:30,g:30,b:38};          // #1e1e26
+const N=apps.length;
+const iR=(RR+CR)/2;                // icon_r = (ring_r+center_r)//2
+const lR=RR-7;                     // label_r = ring_r-14 (x0.5)
+const B={r:30,g:30,b:38};          // bg_color #1e1e26
+
+function A(v){return v/255;}       // alpha 0-255 to 0-1
 
 function draw(){
-  ctx.clearRect(0, 0, W, H);
+  X.clearRect(0,0,W,H);
+  const r=B.r,g=B.g,b=B.b;
 
-  // 1. Outer soft halo
-  const halo = ctx.createRadialGradient(CX, CY, RING_R, CX, CY, RING_R+40);
-  const hr=bg.r, hg=bg.g, hb=bg.b;
-  halo.addColorStop(0, `rgba(${Math.max(0,hr-20)},${Math.max(0,hg-20)},${Math.max(0,hb-20)},0.18)`);
-  halo.addColorStop(0.55, `rgba(${Math.max(0,hr-25)},${Math.max(0,hg-25)},${Math.max(0,hb-25)},0.08)`);
-  halo.addColorStop(0.72, 'rgba(0,0,0,0)');
-  halo.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = halo;
-  ctx.beginPath(); ctx.arc(CX, CY, RING_R+40, 0, Math.PI*2); ctx.fill();
+  // 1. Halo: radial from center, ring_r+80 radius
+  const halo=X.createRadialGradient(CX,CY,0, CX,CY,RR+40);
+  halo.addColorStop(0,   'rgba('+Math.max(0,r-20)+','+Math.max(0,g-20)+','+Math.max(0,b-20)+','+A(45).toFixed(4)+')');
+  halo.addColorStop(0.55,'rgba('+Math.max(0,r-25)+','+Math.max(0,g-25)+','+Math.max(0,b-25)+','+A(20).toFixed(4)+')');
+  halo.addColorStop(0.72,'rgba(0,0,0,0)');
+  halo.addColorStop(1,   'rgba(0,0,0,0)');
+  X.fillStyle=halo;
+  X.beginPath();X.arc(CX,CY,RR+40,0,Math.PI*2);X.fill();
 
-  // 2. Ring body
-  const rg = ctx.createRadialGradient(CX, CY, HUB_R, CX, CY, RING_R);
-  rg.addColorStop(0, `rgba(${Math.min(255,hr+35)},${Math.min(255,hg+35)},${Math.min(255,hb+35)},0.93)`);
-  rg.addColorStop(0.55, `rgba(${Math.min(255,hr+15)},${Math.min(255,hg+15)},${Math.min(255,hb+15)},0.91)`);
-  rg.addColorStop(0.85, `rgba(${hr},${hg},${hb},0.89)`);
-  rg.addColorStop(1, `rgba(${Math.max(0,hr-12)},${Math.max(0,hg-12)},${Math.max(0,hb-12)},0.85)`);
-  ctx.fillStyle = rg;
-  ctx.beginPath(); ctx.arc(CX, CY, RING_R, 0, Math.PI*2);
-  ctx.arc(CX, CY, HUB_R, 0, Math.PI*2, true);
-  ctx.fill();
-  // Inner/outer ring borders
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 0.5;
-  ctx.beginPath(); ctx.arc(CX, CY, RING_R, 0, Math.PI*2); ctx.stroke();
-  ctx.beginPath(); ctx.arc(CX, CY, HUB_R, 0, Math.PI*2); ctx.stroke();
+  // 2. Ring body: radial from center, ring_r radius, subtract hub
+  const rg=X.createRadialGradient(CX,CY,0, CX,CY,RR);
+  rg.addColorStop(0,   'rgba('+Math.min(255,r+35)+','+Math.min(255,g+35)+','+Math.min(255,b+35)+','+A(238).toFixed(4)+')');
+  rg.addColorStop(0.55,'rgba('+Math.min(255,r+15)+','+Math.min(255,g+15)+','+Math.min(255,b+15)+','+A(232).toFixed(4)+')');
+  rg.addColorStop(0.85,'rgba('+r+','+g+','+b+','+A(228).toFixed(4)+')');
+  rg.addColorStop(1,   'rgba('+Math.max(0,r-12)+','+Math.max(0,g-12)+','+Math.max(0,b-12)+','+A(218).toFixed(4)+')');
+  X.fillStyle=rg;
+  X.beginPath();X.arc(CX,CY,RR,0,Math.PI*2);
+  X.arc(CX,CY,CR,0,Math.PI*2,true);X.fill();
 
-  // 3. Segment dividers
-  ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 0.5;
-  for(let i=0; i<N; i++){
-    const a = 2*Math.PI*i/N - Math.PI/2 - Math.PI/N;
-    ctx.beginPath();
-    ctx.moveTo(CX+HUB_R*Math.cos(a), CY+HUB_R*Math.sin(a));
-    ctx.lineTo(CX+RING_R*Math.cos(a), CY+RING_R*Math.sin(a));
-    ctx.stroke();
+  // Ring & hub borders: QPen(QColor(255,255,255,12),1)
+  X.strokeStyle='rgba(255,255,255,'+A(12).toFixed(4)+')';X.lineWidth=0.5;
+  X.beginPath();X.arc(CX,CY,RR,0,Math.PI*2);X.stroke();
+  X.beginPath();X.arc(CX,CY,CR,0,Math.PI*2);X.stroke();
+
+  // 4. Dividers: QPen(QColor(255,255,255,20),1)
+  X.strokeStyle='rgba(255,255,255,'+A(20).toFixed(4)+')';X.lineWidth=0.5;
+  for(let i=0;i<N;i++){
+    const a=2*Math.PI*i/N-Math.PI/2-Math.PI/N;
+    X.beginPath();
+    X.moveTo(CX+CR*Math.cos(a),CY+CR*Math.sin(a));
+    X.lineTo(CX+RR*Math.cos(a),CY+RR*Math.sin(a));
+    X.stroke();
   }
 
-  // 4. Centre hub
-  const hubGrad = ctx.createRadialGradient(CX, CY, 0, CX, CY, HUB_R);
-  hubGrad.addColorStop(0, `rgba(${Math.min(255,hr+48)},${Math.min(255,hg+48)},${Math.min(255,hb+48)},0.97)`);
-  hubGrad.addColorStop(1, `rgba(${Math.min(255,hr+18)},${Math.min(255,hg+18)},${Math.min(255,hb+18)},0.95)`);
-  ctx.fillStyle = hubGrad;
-  ctx.beginPath(); ctx.arc(CX, CY, HUB_R, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5; ctx.stroke();
+  // 5. Hub: radial from center, center_r radius
+  const hg=X.createRadialGradient(CX,CY,0, CX,CY,CR);
+  hg.addColorStop(0,'rgba('+Math.min(255,r+48)+','+Math.min(255,g+48)+','+Math.min(255,b+48)+','+A(248).toFixed(4)+')');
+  hg.addColorStop(1,'rgba('+Math.min(255,r+18)+','+Math.min(255,g+18)+','+Math.min(255,b+18)+','+A(242).toFixed(4)+')');
+  X.fillStyle=hg;
+  X.beginPath();X.arc(CX,CY,CR,0,Math.PI*2);X.fill();
+  // Hub border: QPen(QColor(255,255,255,15),1)
+  X.strokeStyle='rgba(255,255,255,'+A(15).toFixed(4)+')';X.lineWidth=0.5;
+  X.stroke();
 
-  // 5. Center text "SmartRing"
-  ctx.fillStyle = 'rgba(220,220,225,0.9)';
-  ctx.font = 'bold 5px "Microsoft YaHei",sans-serif';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('SmartRing', CX, CY);
+  // Center text: QColor(220,220,225), QFont('Microsoft YaHei',10,Bold)
+  X.fillStyle='rgb(220,220,225)';
+  X.font='bold 5px "Microsoft YaHei",sans-serif';
+  X.textAlign='center';X.textBaseline='middle';
+  X.fillText('SmartRing',CX,CY);
 
-  // 6. Accent dot
-  ctx.fillStyle = '#0078D4';
-  ctx.beginPath(); ctx.arc(CX, CY, HUB_R*0.35, 0, Math.PI*2); ctx.fill();
+  // Accent dot: max(3, center_r*0.35)
+  X.fillStyle='#0078D4';
+  X.beginPath();X.arc(CX,CY,Math.max(1.5,CR*0.35),0,Math.PI*2);X.fill();
 
-  // 7. App icons + labels (no highlight — static display)
-  for(let i=0; i<N; i++){
-    const a = 2*Math.PI*i/N - Math.PI/2;
-    const ix = CX + iconR*Math.cos(a);
-    const iy = CY + iconR*Math.sin(a);
+  // 6. App icons & labels
+  for(let i=0;i<N;i++){
+    const a=2*Math.PI*i/N-Math.PI/2;
+    const ix=CX+iR*Math.cos(a), iy=CY+iR*Math.sin(a);
 
-    // Icon bg
-    ctx.fillStyle = `hsl(${apps[i].hue},55%,42%)`;
-    ctx.beginPath();
-    ctx.roundRect(ix-ICON_SZ/2, iy-ICON_SZ/2, ICON_SZ, ICON_SZ, 5);
-    ctx.fill();
+    // Icon: letter_icon uses setHsv(hue,170,225) -> approximate HSL
+    X.fillStyle='hsl('+apps[i].h+',55%,42%)';
+    X.beginPath();X.roundRect(ix-IS/2,iy-IS/2,IS,IS,5);X.fill();
+    X.fillStyle='#fff';
+    X.font=(IS*0.42).toFixed(1)+'px "Microsoft YaHei",sans-serif';
+    X.textAlign='center';X.textBaseline='middle';
+    X.fillText(apps[i].n[0].toUpperCase(),ix,iy);
 
-    // Letter
-    ctx.fillStyle = '#fff';
-    ctx.font = `${ICON_SZ*0.42}px "Microsoft YaHei",sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(apps[i].name[0].toUpperCase(), ix, iy);
-
-    // Label (plain gray text for all)
-    const lx = CX + labelR*Math.cos(a);
-    const ly = CY + labelR*Math.sin(a);
-    ctx.font = '4.5px "Microsoft YaHei",sans-serif';
-    ctx.fillStyle = 'rgba(210,210,215,0.82)';
-    ctx.fillText(apps[i].name, lx, ly);
+    // Label: QColor(210,210,215), QFont('Microsoft YaHei',9)
+    const lx=CX+lR*Math.cos(a), ly=CY+lR*Math.sin(a);
+    X.font='4.5px "Microsoft YaHei",sans-serif';
+    X.fillStyle='rgb(210,210,215)';
+    X.fillText(apps[i].n,lx,ly);
   }
-
-  requestAnimationFrame(draw);
 }
-
 draw();
 
-// Lang toggle
-window.toggleLang = function(){
-  const btn = document.getElementById('langBtn');
-  const en = document.querySelectorAll('.en');
-  const zh = document.querySelectorAll('.zh');
-  if(btn.textContent === '中文'){
+window.toggleLang=function(){
+  const b=document.getElementById('langBtn');
+  const en=document.querySelectorAll('.en');
+  const zh=document.querySelectorAll('.zh');
+  if(b.textContent==='中文'){
     en.forEach(e=>e.style.display='none');
     zh.forEach(e=>e.style.display='block');
-    btn.textContent = 'English';
-  } else {
+    b.textContent='English';
+  }else{
     en.forEach(e=>e.style.display='block');
     zh.forEach(e=>e.style.display='none');
-    btn.textContent = '中文';
+    b.textContent='中文';
   }
 };
-document.addEventListener('DOMContentLoaded', ()=>{
+document.addEventListener('DOMContentLoaded',()=>{
   document.querySelectorAll('.en').forEach(e=>e.style.display='none');
   document.querySelectorAll('.zh').forEach(e=>e.style.display='block');
 });

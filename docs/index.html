@@ -174,14 +174,14 @@
   <p class="sec-desc en">Everything you need for quick app launching at your fingertips.</p>
   <p class="sec-desc zh">指尖轻触，应用即达。</p>
   <div class="feat-grid">
-    <div class="feat-card"><h3><span class="icon">⚡</span> Hotkey Summon</h3><p class="en">Press a configurable hotkey (default F12) to summon the ring anywhere. Supports modifiers: Ctrl, Alt, Shift, Win.</p><p class="zh">按下可配置快捷键（默认 F12）在屏幕任意位置唤出环形菜单。支持 Ctrl/Alt/Shift/Win 组合键。</p></div>
-    <div class="feat-card"><h3><span class="icon">🎯</span> Mouse Selection</h3><p class="en">Move your mouse toward the desired app — auto-highlight with icon enlargement and label pop. Release to launch.</p><p class="zh">移动鼠标到对应扇区自动高亮，图标放大 + 标签弹出。松开快捷键或点击即启动应用。</p></div>
-    <div class="feat-card"><h3><span class="icon">🎨</span> Customizable Look</h3><p class="en">8 preset accent colours + custom hex. Ring size, hub size, icon size, background colour — all adjustable with live preview.</p><p class="zh">8 种预设主题色 + 自定义色值。圆环外径、中心半径、图标大小、背景色均可调整，带实时预览。</p></div>
-    <div class="feat-card"><h3><span class="icon">🔄</span> Dual Trigger Mode</h3><p class="en">Hold mode: press &amp; hold to show, release to launch. Toggle mode: press once to show, press again to hide.</p><p class="zh">Hold 模式：按住唤出、松开启动。Toggle 模式：按一下显示、再按隐藏。适配不同使用习惯。</p></div>
-    <div class="feat-card"><h3><span class="icon">🚀</span> Auto-Start</h3><p class="en">Highest-priority setting. Launch with Windows — always ready when you need it.</p><p class="zh">最高优先级设置项。随 Windows 自动启动，确保随时可用。可通过任务管理器管理。</p></div>
-    <div class="feat-card"><h3><span class="icon">⌨</span> Keyboard Visual</h3><p class="en">Built-in simulated keyboard in settings highlights captured hotkey keys. Conflict detection for 30+ system shortcuts.</p><p class="zh">设置面板内置模拟键盘，输入快捷键时自动高亮对应按键。30+ 系统快捷键冲突检测与提醒。</p></div>
-    <div class="feat-card"><h3><span class="icon">👁</span> Live Preview</h3><p class="en">Save settings then preview the real ring in a popup window. Adjust → Preview → Confirm — see exactly what you get.</p><p class="zh">保存设置后可弹出预览窗口查看真实圆环效果。调整 → 预览 → 确认，所见即所得。</p></div>
-    <div class="feat-card"><h3><span class="icon">🔌</span> Mouse Side Button</h3><p class="en">Map your mouse's side button to F12 via its driver software for the ultimate one-hand workflow.</p><p class="zh">通过鼠标驱动软件将侧键映射为 F12，单手操作，效率翻倍。</p></div>
+    <div class="feat-card"><h3>Hotkey Summon</h3><p class="en">Press a configurable hotkey (default F12) to summon the ring anywhere. Supports modifiers: Ctrl, Alt, Shift, Win.</p><p class="zh">按下可配置快捷键（默认 F12）在屏幕任意位置唤出环形菜单。支持 Ctrl/Alt/Shift/Win 组合键。</p></div>
+    <div class="feat-card"><h3>Mouse Selection</h3><p class="en">Move your mouse toward the desired app — auto-highlight with icon enlargement and label pop. Release to launch.</p><p class="zh">移动鼠标到对应扇区自动高亮，图标放大 + 标签弹出。松开快捷键或点击即启动应用。</p></div>
+    <div class="feat-card"><h3><span class="icon"></span> Customizable Look</h3><p class="en">8 preset accent colours + custom hex. Ring size, hub size, icon size, background colour — all adjustable with live preview.</p><p class="zh">8 种预设主题色 + 自定义色值。圆环外径、中心半径、图标大小、背景色均可调整，带实时预览。</p></div>
+    <div class="feat-card"><h3><span class="icon"></span> Dual Trigger Mode</h3><p class="en">Hold mode: press &amp; hold to show, release to launch. Toggle mode: press once to show, press again to hide.</p><p class="zh">Hold 模式：按住唤出、松开启动。Toggle 模式：按一下显示、再按隐藏。适配不同使用习惯。</p></div>
+    <div class="feat-card"><h3><span class="icon"></span> Auto-Start</h3><p class="en">Highest-priority setting. Launch with Windows — always ready when you need it.</p><p class="zh">最高优先级设置项。随 Windows 自动启动，确保随时可用。可通过任务管理器管理。</p></div>
+    <div class="feat-card"><h3><span class="icon"></span> Keyboard Visual</h3><p class="en">Built-in simulated keyboard in settings highlights captured hotkey keys. Conflict detection for 30+ system shortcuts.</p><p class="zh">设置面板内置模拟键盘，输入快捷键时自动高亮对应按键。30+ 系统快捷键冲突检测与提醒。</p></div>
+    <div class="feat-card"><h3><span class="icon"></span> Live Preview</h3><p class="en">Save settings then preview the real ring in a popup window. Adjust → Preview → Confirm — see exactly what you get.</p><p class="zh">保存设置后可弹出预览窗口查看真实圆环效果。调整 → 预览 → 确认，所见即所得。</p></div>
+    <div class="feat-card"><h3><span class="icon"></span> Mouse Side Button</h3><p class="en">Map your mouse's side button to F12 via its driver software for the ultimate one-hand workflow.</p><p class="zh">通过鼠标驱动软件将侧键映射为 F12，单手操作，效率翻倍。</p></div>
   </div>
 </div>
 
@@ -241,8 +241,12 @@
 
 <script>
 /* ═══════════════════════════════════════════════════
-   Interactive Ring Preview — matches actual app
-   ring_radius=190  center_radius=58  icon_size=38
+   Interactive Ring Preview — logic matches smartring.py exactly:
+   - ring_radius=190, center_radius=58, icon_size=38 (scaled x0.5)
+   - segment detection: _mouse_angle + _segment_for_angle
+   - show_labels=True: labels for all apps
+   - center hub text: "SmartRing"
+   - halo alpha=0 at 0.72 gradient stop
    ═══════════════════════════════════════════════════ */
 (function(){
 const canvas = document.getElementById('ringCanvas');
@@ -254,23 +258,23 @@ canvas.style.width = W+'px'; canvas.style.height = H+'px';
 const ctx = canvas.getContext('2d');
 ctx.scale(dpr, dpr);
 
-// These match the actual app defaults
+// Exact app defaults scaled x0.5 for 340px canvas
 const RING_R = 95, HUB_R = 29, ICON_SZ = 19;
 const CX = W/2, CY = H/2;
 const apps = [
-  {name:'Notepad',   hue:210},
-  {name:'Calculator',hue:120},
-  {name:'Explorer',  hue:0},
-  {name:'Terminal',  hue:280},
-  {name:'Browser',   hue:45},
-  {name:'VS Code',   hue:170},
+  {name:'Notepad',     hue:210},
+  {name:'Calculator',  hue:120},
+  {name:'Explorer',    hue:0},
+  {name:'Terminal',    hue:280},
+  {name:'Browser',     hue:45},
+  {name:'VS Code',     hue:170},
 ];
 const N = apps.length;
-const iconR = (RING_R + HUB_R) / 2;
-const labelR = RING_R - 10;
+const iconR = (RING_R + HUB_R) / 2;            // matches app: (ring_r+center_r)//2
+const labelR = RING_R - 7;                     // matches app: ring_r - 14 (*0.5)
+const bg = {r:30,g:30,b:38};                    // #1e1e26
 
-let mouseX = -100, mouseY = -100, highlight = -1, animHighlight = -1;
-let targetHighlight = -1;
+let mouseX = -100, mouseY = -100, highlight = -1;
 
 canvas.addEventListener('mousemove', e => {
   const rect = canvas.getBoundingClientRect();
@@ -283,50 +287,40 @@ canvas.addEventListener('mouseleave', () => {
   updateHighlight();
 });
 
+// ── matches app _mouse_angle + _segment_for_angle ──
 function updateHighlight(){
   const dx = mouseX - CX, dy = mouseY - CY;
   const dist = Math.sqrt(dx*dx + dy*dy);
-  if(dist < HUB_R + 4 || dist > RING_R + 30 || dist < 5) {
-    targetHighlight = -1;
+
+  if(dist < HUB_R || dist > RING_R + 18) {  // matches app: dist < center_r || dist > ring_r+35(*0.5≈18)
+    highlight = -1;
   } else {
     let a = Math.atan2(dy, dx);
+    // Normalise to [0, 2pi) and rotate so 0 = top (matches app)
     a = (a + Math.PI/2) % (2*Math.PI);
+    if(a < 0) a += 2*Math.PI;
+    // Offset by half a segment (matches app: a + math.pi/n)
     a = (a + Math.PI/N) % (2*Math.PI);
-    targetHighlight = Math.floor(a / (2*Math.PI/N)) % N;
+    highlight = Math.floor(a / (2*Math.PI/N)) % N;
   }
-  if(targetHighlight >= 0){
-    hint.style.opacity = '0';
-  } else {
-    hint.style.opacity = '1';
-  }
+
+  hint.style.opacity = highlight >= 0 ? '0' : '1';
 }
 
-function loop(){
-  // Smooth highlight transition
-  if(highlight !== targetHighlight){
-    const diff = targetHighlight - highlight;
-    if(Math.abs(diff) <= 0.05) highlight = targetHighlight;
-    else highlight += diff * 0.25;
-  }
-  draw();
-  requestAnimationFrame(loop);
-}
-
+// ── matches app _do_paint ──
 function draw(){
   ctx.clearRect(0, 0, W, H);
-  const bg = {r:30,g:30,b:38}; // #1e1e26
-  const acc = '#0078D4';
 
-  // Halo
-  const halo = ctx.createRadialGradient(CX, CY, RING_R-10, CX, CY, RING_R+42);
+  // 1. Outer soft halo (matches app gradient stops 0.0→0.55→0.72→1.0)
+  const halo = ctx.createRadialGradient(CX, CY, RING_R-5, CX, CY, RING_R+42);
   halo.addColorStop(0, `rgba(${Math.max(0,bg.r-20)},${Math.max(0,bg.g-20)},${Math.max(0,bg.b-20)},0.18)`);
-  halo.addColorStop(0.5, `rgba(${Math.max(0,bg.r-25)},${Math.max(0,bg.g-25)},${Math.max(0,bg.b-25)},0.08)`);
-  halo.addColorStop(0.72,'rgba(0,0,0,0)');
-  halo.addColorStop(1,'rgba(0,0,0,0)');
+  halo.addColorStop(0.55, `rgba(${Math.max(0,bg.r-25)},${Math.max(0,bg.g-25)},${Math.max(0,bg.b-25)},0.08)`);
+  halo.addColorStop(0.72, 'rgba(0,0,0,0)');
+  halo.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = halo;
   ctx.beginPath(); ctx.arc(CX, CY, RING_R+42, 0, Math.PI*2); ctx.fill();
 
-  // Ring body
+  // 2. Ring body (matches app)
   const rg = ctx.createRadialGradient(CX, CY, HUB_R, CX, CY, RING_R);
   rg.addColorStop(0, `rgba(${Math.min(255,bg.r+35)},${Math.min(255,bg.g+35)},${Math.min(255,bg.b+35)},0.93)`);
   rg.addColorStop(0.55, `rgba(${Math.min(255,bg.r+15)},${Math.min(255,bg.g+15)},${Math.min(255,bg.b+15)},0.91)`);
@@ -336,10 +330,13 @@ function draw(){
   ctx.beginPath(); ctx.arc(CX, CY, RING_R, 0, Math.PI*2);
   ctx.arc(CX, CY, HUB_R, 0, Math.PI*2, true);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1; ctx.stroke();
+  // Inner border
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.arc(CX, CY, RING_R, 0, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(CX, CY, HUB_R, 0, Math.PI*2); ctx.stroke();
 
-  // Dividers
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+  // 4. Segment dividers (matches app)
+  ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 0.5;
   for(let i=0; i<N; i++){
     const a = 2*Math.PI*i/N - Math.PI/2 - Math.PI/N;
     ctx.beginPath();
@@ -348,28 +345,34 @@ function draw(){
     ctx.stroke();
   }
 
-  // Hub
+  // 5. Centre hub (matches app)
   const hg = ctx.createRadialGradient(CX, CY, 0, CX, CY, HUB_R);
   hg.addColorStop(0, `rgba(${Math.min(255,bg.r+48)},${Math.min(255,bg.g+48)},${Math.min(255,bg.b+48)},0.97)`);
   hg.addColorStop(1, `rgba(${Math.min(255,bg.r+18)},${Math.min(255,bg.g+18)},${Math.min(255,bg.b+18)},0.95)`);
   ctx.fillStyle = hg;
   ctx.beginPath(); ctx.arc(CX, CY, HUB_R, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5;
+  ctx.stroke();
+
+  // Center text "SmartRing" (matches app)
+  ctx.fillStyle = 'rgba(220,220,225,0.9)';
+  ctx.font = 'bold 5px "Microsoft YaHei",sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('SmartRing', CX, CY);
 
   // Accent dot
-  ctx.fillStyle = acc;
+  ctx.fillStyle = '#0078D4';
   ctx.beginPath(); ctx.arc(CX, CY, HUB_R*0.35, 0, Math.PI*2); ctx.fill();
 
-  // App icons
-  const hi = highlight >= -0.5 ? Math.round(animHighlight < 0 ? highlight : animHighlight) : -1;
+  // 6. App icons + labels (matches app show_labels=True)
   for(let i=0; i<N; i++){
     const a = 2*Math.PI*i/N - Math.PI/2;
     const ix = CX + iconR*Math.cos(a);
     const iy = CY + iconR*Math.sin(a);
-    const isHi = i === hi;
+    const isHi = i === highlight;
     const sz = isHi ? ICON_SZ*1.15 : ICON_SZ;
 
-    // Icon bg
+    // Icon background
     ctx.fillStyle = `hsl(${apps[i].hue},55%,${isHi?52:42}%)`;
     ctx.beginPath();
     ctx.roundRect(ix-sz/2, iy-sz/2, sz, sz, 5);
@@ -377,30 +380,36 @@ function draw(){
 
     // Letter
     ctx.fillStyle = '#fff';
-    ctx.font = `${isHi?'bold ':' '}${sz*0.42}px "Microsoft YaHei","Segoe UI",sans-serif`;
+    ctx.font = `${isHi?'bold ':' '}${sz*0.42}px "Microsoft YaHei",sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(apps[i].name[0].toUpperCase(), ix, iy);
 
-    // Label
+    // Label (matches app: all apps show labels when show_labels=True)
+    const lx = CX + labelR*Math.cos(a);
+    const ly = CY + labelR*Math.sin(a);
+    const name = apps[i].name;
+
     if(isHi){
-      const lx = CX + labelR*Math.cos(a);
-      const ly = CY + labelR*Math.sin(a);
-      const name = apps[i].name;
-      ctx.font = 'bold 11px "Microsoft YaHei","Segoe UI",sans-serif';
+      // Highlighted: pill background + bold white text
+      ctx.font = 'bold 5px "Microsoft YaHei",sans-serif';
       const tw = ctx.measureText(name).width;
-      const th = 14;
-      // Pill
       ctx.fillStyle = 'rgba(60,60,68,0.86)';
       ctx.beginPath();
-      ctx.roundRect(lx-tw/2-9, ly-th/2-3, tw+18, th+8, 8);
+      ctx.roundRect(lx-tw/2-9, ly-7, tw+18, 14, 7);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 0.5;
       ctx.stroke();
-      // Text
       ctx.fillStyle = '#fff';
+      ctx.fillText(name, lx, ly);
+    } else {
+      // Non-highlighted: plain gray text (matches app)
+      ctx.font = '4.5px "Microsoft YaHei",sans-serif';
+      ctx.fillStyle = 'rgba(210,210,215,0.8)';
       ctx.fillText(name, lx, ly);
     }
   }
+
+  requestAnimationFrame(draw);
 }
 
 // Lang toggle
@@ -418,13 +427,12 @@ window.toggleLang = function(){
     btn.textContent = '中文';
   }
 };
-// Default: show Chinese
 document.addEventListener('DOMContentLoaded', ()=>{
   document.querySelectorAll('.en').forEach(e=>e.style.display='none');
   document.querySelectorAll('.zh').forEach(e=>e.style.display='block');
 });
 
-requestAnimationFrame(loop);
+requestAnimationFrame(draw);
 })();
 </script>
 </body>

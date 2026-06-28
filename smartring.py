@@ -1968,13 +1968,13 @@ class SettingsDialog(QWidget):
         # Also check if this is f12 without modifiers (most common issue)
         if key in self._CONFLICTS:
             self._conflict_warn.setText(
-                f"⚠ 冲突提醒：「{hotkey_str.upper()}」通常被 {self._CONFLICTS[key]} 占用。\n"
+                f"[!] 冲突提醒：「{hotkey_str.upper()}」通常被 {self._CONFLICTS[key]} 占用。\n"
                 f"建议改用组合键，如 Ctrl+F12 或 Alt+F12，避免干扰正常操作。"
             )
             self._conflict_warn.show()
         elif key == "f12":
             self._conflict_warn.setText(
-                "⚠ F12 在浏览器中会打开开发者工具。\n"
+                "[!] F12 在浏览器中会打开开发者工具。\n"
                 "建议改用 Ctrl+F12 或其他组合键。"
             )
             self._conflict_warn.show()
@@ -2520,7 +2520,7 @@ class SetupWizard(QDialog):
         step_names = ["欢迎", "快捷键", "应用", "外观", "完成"]
         for i, name in enumerate(step_names):
             if i > 0:
-                sep = QLabel("  ▸  ")
+                sep = QLabel("  >  ")
                 sep.setStyleSheet("color: #555; font-size: 12px;")
                 step_bar.addWidget(sep)
             lbl = QLabel(name)
@@ -3058,7 +3058,7 @@ class SetupWizard(QDialog):
 
         layout.addStretch()
 
-        check = QLabel("✓")
+        check = QLabel("[OK]")
         check.setStyleSheet("font-size: 48px; color: #009B5A;")
         check.setAlignment(Qt.AlignCenter)
         layout.addWidget(check)

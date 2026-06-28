@@ -1239,26 +1239,59 @@ class PreviewBackdrop(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, False)
         self.setWindowTitle(f"{APP_NAME} — 预览")
 
-        # Size to fit the ring (2 × outer radius + extra padding for halo + hint)
+        # Size to fit the ring
         padding = 100
         win_size = 2 * (self._ring_r + padding)
-        self.setFixedSize(win_size, win_size)
+        self.setFixedSize(win_size, win_size + 36)  # extra height for title bar
 
         # Center on primary screen
         screen_center = QApplication.primaryScreen().geometry().center()
         self.move(screen_center.x() - win_size // 2,
-                   screen_center.y() - win_size // 2)
+                   screen_center.y() - (win_size + 36) // 2)
 
         # Dark background
         self.setStyleSheet(
-            f"QWidget {{ background-color: #1a1a20; border: 1px solid #3a3a42; border-radius: 12px; }}"
+            "QWidget#previewBackdrop { background-color: #1a1a20; "
+            "border: 1px solid #3a3a42; border-radius: 12px; }"
         )
+        self.setObjectName("previewBackdrop")
+
+        # ── Custom title bar ──────────────────────────────────────────
+        title_bar = QWidget(self)
+        title_bar.setFixedHeight(36)
+        title_bar.setStyleSheet("background: transparent; border: none;")
+        title_bar.move(0, 0)
+        title_bar.setFixedWidth(win_size)
+
+        tb_layout = QHBoxLayout(title_bar)
+        tb_layout.setContentsMargins(16, 0, 8, 0)
+        tb_layout.setSpacing(0)
+
+        title_lbl = QLabel(f"{APP_NAME} — 预览")
+        title_lbl.setStyleSheet("color: #ccc; font-size: 13px; font-weight: bold; background: transparent;")
+        tb_layout.addWidget(title_lbl)
+        tb_layout.addStretch()
+
+        close_btn = QPushButton("✕")
+        close_btn.setFixedSize(28, 28)
+        close_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #999; border: none; "
+            "font-size: 16px; font-weight: bold; border-radius: 6px; }"
+            "QPushButton:hover { background-color: #c42b1c; color: white; }"
+        )
+        close_btn.clicked.connect(self._dismiss)
+        tb_layout.addWidget(close_btn)
+
+        # ── Ring positioning ──────────────────────────────────────────
+        # Ring appears below the title bar
+        ring_cx = win_size // 2
+        ring_cy = 36 + (win_size // 2)  # offset by title bar height
+        self._ring_center = QPoint(ring_cx, ring_cy)
 
         # Connect ring signals
         self._ring.dismissed.connect(self._on_ring_dismissed)
         self._ring.app_launched.connect(lambda _idx: self._on_ring_dismissed())
 
-        self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
 
         # Fade in
@@ -1270,25 +1303,22 @@ class PreviewBackdrop(QWidget):
         self._fade.start()
 
         self.show()
-        self.setFocus()  # grab focus so Esc works
+        self.setFocus()
 
     def paintEvent(self, _event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        # Hint text at bottom
-        painter.setPen(QColor(140, 140, 148, 150))
-        font = QFont("Microsoft YaHei", 12)
+        # Hint text at bottom (inside the ring area)
+        painter.setPen(QColor(140, 140, 148, 130))
+        font = QFont("Microsoft YaHei", 11)
         painter.setFont(font)
         painter.drawText(
             self.rect().adjusted(0, 0, 0, -18),
             Qt.AlignHCenter | Qt.AlignBottom,
-            "点击任意位置 或 按 Esc 关闭预览",
+            "按 Esc 或点击右上角 ✕ 关闭预览",
         )
         painter.end()
-
-    def mousePressEvent(self, event) -> None:
-        self._dismiss()
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Escape:
@@ -1297,7 +1327,7 @@ class PreviewBackdrop(QWidget):
             super().keyPressEvent(event)
 
     def _on_ring_dismissed(self) -> None:
-        """Called when the ring itself is dismissed (via its own Esc handling)."""
+        """Called when the ring itself is dismissed."""
         if not self._closing:
             self._dismiss()
 
@@ -1663,33 +1693,35 @@ class SettingsDialog(QWidget):
         # ═══════════════════════════════════════════════════════════════
         outer.addSpacing(10)
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(12)
         btn_row.addStretch()
 
         preview_btn = QPushButton("预览圆环")
-        preview_btn.setMinimumWidth(100)
         preview_btn.setStyleSheet(
             "QPushButton { background-color: #555560; color: #e0e0e0; "
-            "border-radius: 6px; padding: 8px 18px; }"
+            "border-radius: 6px; padding: 8px 20px; font-size: 13px; min-width: 100px; }"
             "QPushButton:hover { background-color: #666670; }"
         )
         preview_btn.clicked.connect(self._preview_ring_live)
         btn_row.addWidget(preview_btn)
 
-        btn_row.addSpacing(8)
-
         save_btn = QPushButton("保存设置")
         save_btn.setDefault(True)
-        save_btn.setMinimumWidth(120)
         save_btn.setStyleSheet(
             "QPushButton { background-color: #0078D4; color: white; "
-            "border-radius: 6px; padding: 8px 22px; font-weight: bold; }"
+            "border-radius: 6px; padding: 8px 20px; font-size: 13px; "
+            "font-weight: bold; min-width: 100px; }"
             "QPushButton:hover { background-color: #1084d8; }"
         )
         save_btn.clicked.connect(self._save)
         btn_row.addWidget(save_btn)
 
         cancel_btn = QPushButton("取消")
-        cancel_btn.setMinimumWidth(80)
+        cancel_btn.setStyleSheet(
+            "QPushButton { background-color: #3a3a40; color: #d0d0d5; "
+            "border-radius: 6px; padding: 8px 20px; font-size: 13px; min-width: 100px; }"
+            "QPushButton:hover { background-color: #4a4a50; }"
+        )
         cancel_btn.clicked.connect(self.close)
         btn_row.addWidget(cancel_btn)
 
@@ -1977,12 +2009,16 @@ class SettingsDialog(QWidget):
             QMessageBox.Yes,
         )
         if reply == QMessageBox.Yes:
-            self._preview_ring_live()
+            self._preview_ring_live(then_close=True)
         else:
             self.close()
 
-    def _preview_ring_live(self) -> None:
-        """Show the real ring overlay in a centered popup window for preview."""
+    def _preview_ring_live(self, then_close: bool = False) -> None:
+        """Show the real ring overlay in a centered popup window for preview.
+
+        If then_close is True, close settings when the preview is dismissed
+        (used after save). Otherwise re-show settings (used from preview button).
+        """
         self.hide()
 
         apps = []
@@ -2017,14 +2053,20 @@ class SettingsDialog(QWidget):
             preview_mode=True,
         )
 
-        # Create backdrop popup first, then position ring at its center
+        # Create backdrop popup, then position ring inside it
         self._preview_backdrop = PreviewBackdrop(preview_ring, ring_r)
-        self._preview_backdrop.dismissed.connect(self._on_preview_dismissed)
+        if then_close:
+            # From save → close everything when dismissed
+            self._preview_backdrop.dismissed.connect(self.close)
+        else:
+            # From preview button → re-show settings when dismissed
+            self._preview_backdrop.dismissed.connect(self._on_preview_dismissed)
 
-        # Position ring at the center of the backdrop window
-        backdrop_center = self._preview_backdrop.rect().center()
-        global_backdrop_center = self._preview_backdrop.mapToGlobal(backdrop_center)
-        preview_ring.show_at(global_backdrop_center)
+        # Position ring at the backdrop's internal ring center
+        ring_global = self._preview_backdrop.mapToGlobal(
+            self._preview_backdrop._ring_center
+        )
+        preview_ring.show_at(ring_global)
 
     def _on_preview_dismissed(self) -> None:
         """Re-show settings dialog after preview backdrop is dismissed."""

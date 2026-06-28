@@ -1080,35 +1080,54 @@ class RingOverlay(QWidget):
 class _KeyboardVisual(QWidget):
     """Shows a simplified keyboard layout highlighting the captured hotkey."""
 
-    # Keys to display, grouped by row
-    ROWS = [
-        # Row 0: function keys
-        ["Esc"] + [f"F{i}" for i in range(1, 13)] + ["PrtSc", "ScrLk", "Pause"],
+    # Keys to display, grouped by row — each row is a list of (label, width_mult) tuples
+    _KEYBOARD = [
+        # Row 0: function row — smaller keys, extra gap between groups
+        [
+            ("Esc", 1.0), ("F1", 1.0), ("F2", 1.0), ("F3", 1.0), ("F4", 1.0),
+            ("", 0.5), ("F5", 1.0), ("F6", 1.0), ("F7", 1.0), ("F8", 1.0),
+            ("", 0.5), ("F9", 1.0), ("F10", 1.0), ("F11", 1.0), ("F12", 1.0),
+            ("", 0.5), ("PrtSc", 1.0), ("ScrLk", 1.0), ("Pause", 1.0),
+        ],
         # Row 1: number row
-        ["~\n`", "!\n1", "@\n2", "#\n3", "$\n4", "%\n5", "^\n6", "&\n7", "*\n8", "(\n9", ")\n0", "_\n-", "+\n=", "Backspc"],
+        [
+            ("~\n`", 1.0), ("!\n1", 1.0), ("@\n2", 1.0), ("#\n3", 1.0),
+            ("$\n4", 1.0), ("%\n5", 1.0), ("^\n6", 1.0), ("&\n7", 1.0),
+            ("*\n8", 1.0), ("(\n9", 1.0), (")\n0", 1.0), ("_\n-", 1.0),
+            ("+\n=", 1.0), ("Bksp", 2.2),
+        ],
         # Row 2: QWERTY top
-        ["Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{\n[", "}\n]", "|\n\\"],
+        [
+            ("Tab", 1.5), ("Q", 1.0), ("W", 1.0), ("E", 1.0), ("R", 1.0),
+            ("T", 1.0), ("Y", 1.0), ("U", 1.0), ("I", 1.0), ("O", 1.0),
+            ("P", 1.0), ("{\n[", 1.0), ("}\n]", 1.0), ("|\n\\", 1.5),
+        ],
         # Row 3: home row
-        ["Caps", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":\n;", '"\n\'', "Enter"],
-        # Row 4: bottom
-        ["Shift", "Z", "X", "C", "V", "B", "N", "M", "<\n,", ">\n.", "?\n/", "Shift"],
-        # Row 5: modifiers
-        ["Ctrl", "Win", "Alt", "Space", "Alt", "Win", "Menu", "Ctrl"],
+        [
+            ("Caps", 1.8), ("A", 1.0), ("S", 1.0), ("D", 1.0), ("F", 1.0),
+            ("G", 1.0), ("H", 1.0), ("J", 1.0), ("K", 1.0), ("L", 1.0),
+            (":\n;", 1.0), ("\"\n'", 1.0), ("Enter", 2.3),
+        ],
+        # Row 4: shift row
+        [
+            ("Shift", 2.4), ("Z", 1.0), ("X", 1.0), ("C", 1.0), ("V", 1.0),
+            ("B", 1.0), ("N", 1.0), ("M", 1.0), ("<\n,", 1.0), (">\n.", 1.0),
+            ("?\n/", 1.0), ("Shift", 2.7),
+        ],
+        # Row 5: bottom modifiers
+        [
+            ("Ctrl", 1.4), ("Win", 1.2), ("Alt", 1.2), ("", 5.5),
+            ("Alt", 1.2), ("Win", 1.2), ("Menu", 1.2), ("Ctrl", 1.4),
+        ],
     ]
-
-    # Wide keys (relative widths)
-    WIDE = {"Backspc": 2.2, "Tab": 1.6, "Caps": 1.9, "Enter": 2.3,
-            "Shift": 2.5, "Ctrl": 1.5, "Win": 1.3, "Alt": 1.3,
-            "Menu": 1.3, "Space": 6.0, "Esc": 1.0, "PrtSc": 1.0,
-            "ScrLk": 1.0, "Pause": 1.0}
 
     MOD_KEYS = {"Ctrl", "Alt", "Shift", "Win", "Menu"}
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._highlighted_keys: set = set()
-        self.setFixedHeight(165)
-        self.setMinimumWidth(400)
+        self.setFixedHeight(168)
+        self.setMinimumWidth(420)
         self.setMouseTracking(True)
 
     def set_hotkey(self, hotkey_str: str) -> None:
@@ -1135,55 +1154,153 @@ class _KeyboardVisual(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         w = self.width()
-        base_key_w = 38
-        key_h = 24
-        gap = 3
-        row_y_start = 2
+        unit_w = 40   # base key width in px
+        key_h = 23
+        gap = 2
+        fn_key_h = 20
+        fn_unit_w = 32
+        top_margin = 2
 
-        for row_idx, row_keys in enumerate(self.ROWS):
-            y = row_y_start + row_idx * (key_h + gap)
-            x = 4
+        for row_idx, row_data in enumerate(self._KEYBOARD):
+            is_fn_row = row_idx == 0
+            ukw = fn_unit_w if is_fn_row else unit_w
+            kh = fn_key_h if is_fn_row else key_h
 
-            # Center the function row
-            if row_idx == 0:
-                total_w = sum(self.WIDE.get(k, 1.0) * base_key_w + gap for k in row_keys) - gap
-                x = max(4, (w - total_w) // 2)
+            # Calculate total width for this row
+            total_w = sum(wm * ukw + gap for _, wm in row_data) - gap
+            x = (w - total_w) // 2  # center every row
+            y = top_margin + sum(
+                (fn_key_h if ri == 0 else key_h) + gap
+                for ri in range(row_idx)
+            )
 
-            for key_name in row_keys:
-                width_mult = self.WIDE.get(key_name, 1.0)
-                kw = int(base_key_w * width_mult)
+            for label, width_mult in row_data:
+                if not label:
+                    # Spacer
+                    x += int(width_mult * ukw)
+                    continue
 
-                # Highlight?
-                is_hi = key_name in self._highlighted_keys
-                is_mod = key_name in self.MOD_KEYS
+                kw = int(width_mult * ukw)
+                rect = QRect(int(x), int(y), kw - gap, kh)
+
+                is_hi = label in self._highlighted_keys
+                is_mod = label in self.MOD_KEYS
 
                 if is_hi:
                     painter.setBrush(QBrush(QColor("#0078D4")))
-                    painter.setPen(QPen(QColor("#50a0ff"), 1.5))
+                    painter.setPen(QPen(QColor("#50a0ff"), 1.2))
                 elif is_mod:
-                    painter.setBrush(QBrush(QColor(58, 58, 65)))
-                    painter.setPen(QPen(QColor(90, 90, 100), 1))
+                    painter.setBrush(QBrush(QColor(56, 56, 62)))
+                    painter.setPen(QPen(QColor(85, 85, 93), 1))
                 else:
-                    painter.setBrush(QBrush(QColor(48, 48, 54)))
-                    painter.setPen(QPen(QColor(72, 72, 78), 1))
+                    painter.setBrush(QBrush(QColor(46, 46, 52)))
+                    painter.setPen(QPen(QColor(68, 68, 74), 1))
 
-                rect = QRect(int(x), int(y), kw - gap, key_h)
                 painter.drawRoundedRect(rect, 3, 3)
 
-                # Key label
+                # Label
                 if is_hi:
                     painter.setPen(QColor(255, 255, 255))
                 else:
-                    painter.setPen(QColor(180, 180, 185))
-                font = QFont("Microsoft YaHei", 7)
+                    painter.setPen(QColor(175, 175, 180))
+                fz = 6 if is_fn_row else 7
+                font = QFont("Microsoft YaHei", fz)
                 painter.setFont(font)
-                # Show first line only for dual labels
-                label = key_name.split("\n")[0]
-                painter.drawText(rect, Qt.AlignCenter, label)
+                display = label.split("\n")[0]
+                painter.drawText(rect, Qt.AlignCenter, display)
 
                 x += kw
 
         painter.end()
+
+
+# =============================================================================
+# PreviewBackdrop  —  fullscreen backdrop for ring preview
+# =============================================================================
+
+class PreviewBackdrop(QWidget):
+    """Fullscreen semi-transparent backdrop that hosts the ring for preview."""
+
+    dismissed = pyqtSignal()
+
+    def __init__(self, ring: RingOverlay, parent=None):
+        super().__init__(parent)
+        self._ring = ring
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        self.setWindowFlags(
+            Qt.FramelessWindowHint
+            | Qt.WindowStaysOnTopHint
+            | Qt.Tool
+        )
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+
+        # Cover all screens
+        desktop = QApplication.desktop()
+        if desktop:
+            geom = desktop.screenGeometry(desktop.primaryScreen())
+            self.setGeometry(geom)
+
+        # Fade in
+        self.setWindowOpacity(0.0)
+        self._fade = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade.setDuration(200)
+        self._fade.setStartValue(0.0)
+        self._fade.setEndValue(1.0)
+        self._fade.start()
+
+        # Connect ring signals
+        self._ring.dismissed.connect(self._on_ring_dismissed)
+        self._ring.app_launched.connect(lambda _idx: self._on_ring_dismissed())
+
+        self.setMouseTracking(True)
+        self.show()
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        # Dark semi-transparent backdrop
+        painter.fillRect(self.rect(), QColor(10, 10, 14, 210))
+
+        # Subtle hint text at bottom
+        painter.setPen(QColor(180, 180, 185, 120))
+        font = QFont("Microsoft YaHei", 13)
+        painter.setFont(font)
+        painter.drawText(
+            self.rect().adjusted(0, 0, 0, -40),
+            Qt.AlignHCenter | Qt.AlignBottom,
+            "点击任意位置 或 按 Esc 关闭预览",
+        )
+        painter.end()
+
+    def mousePressEvent(self, event) -> None:
+        self._on_ring_dismissed()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape:
+            self._on_ring_dismissed()
+
+    def _on_ring_dismissed(self) -> None:
+        if self._ring and self._ring.isVisible():
+            self._ring.hide_ring()
+        # Fade out backdrop then close
+        self._fade.setStartValue(self.windowOpacity())
+        self._fade.setEndValue(0.0)
+        self._fade.finished.connect(self._do_close)
+        self._fade.start()
+
+    def _do_close(self) -> None:
+        try:
+            self._fade.finished.disconnect(self._do_close)
+        except Exception:
+            pass
+        self._ring.deleteLater()
+        self._ring = None
+        self.dismissed.emit()
+        self.close()
+        self.deleteLater()
 
 
 # =============================================================================
@@ -1200,7 +1317,7 @@ class SettingsDialog(QWidget):
         self._config = config
         self._app_rows: List[Tuple[QLineEdit, QLineEdit, QLineEdit]] = []
         self._accent_color = hex_to_qcolor(config.accent_color)
-        self._preview_ring = None  # live ring preview after save
+        self._preview_backdrop = None
         self._setup_ui()
         self._load()
 
@@ -1842,8 +1959,7 @@ class SettingsDialog(QWidget):
             self.close()
 
     def _preview_ring_live(self) -> None:
-        """Show the real ring overlay at cursor position for preview."""
-        # Hide settings dialog temporarily
+        """Show the real ring overlay on a fullscreen backdrop for preview."""
         self.hide()
 
         apps = []
@@ -1866,7 +1982,7 @@ class SettingsDialog(QWidget):
         bg = self._bg_edit.text().strip() or "#1e1e26"
         show_labels = self._show_labels_cb.isChecked()
 
-        self._preview_ring = RingOverlay(
+        preview_ring = RingOverlay(
             apps=apps,
             ring_radius=ring_r,
             center_radius=center_r,
@@ -1877,19 +1993,21 @@ class SettingsDialog(QWidget):
             show_labels=show_labels,
             preview_mode=True,
         )
-        # On dismiss or click, re-show settings (preview only, no launch)
-        self._preview_ring.dismissed.connect(self._on_preview_dismissed)
-        self._preview_ring.app_launched.connect(lambda _idx: self._on_preview_dismissed())
-        self._preview_ring.show_at(QCursor.pos())
+        # Show ring at screen center, inside the backdrop
+        screen_center = QApplication.primaryScreen().geometry().center()
+        preview_ring.show_at(screen_center)
+
+        # Wrap in fullscreen backdrop
+        self._preview_backdrop = PreviewBackdrop(preview_ring)
+        self._preview_backdrop.dismissed.connect(self._on_preview_dismissed)
 
     def _on_preview_dismissed(self) -> None:
-        """Re-show settings dialog after preview ring is dismissed."""
+        """Re-show settings dialog after preview backdrop is dismissed."""
         self.show()
         self.raise_()
         self.activateWindow()
-        if self._preview_ring:
-            self._preview_ring.deleteLater()
-            self._preview_ring = None
+        if hasattr(self, '_preview_backdrop') and self._preview_backdrop:
+            self._preview_backdrop = None
 
 
 # =============================================================================
@@ -3007,6 +3125,12 @@ class SmartRingApp(QObject):
 
         menu.addSeparator()
 
+        reset_action = QAction("初始化 — 恢复默认设置", menu)
+        reset_action.triggered.connect(self._reset_config)
+        menu.addAction(reset_action)
+
+        menu.addSeparator()
+
         quit_action = QAction("退出 (&Q)", menu)
         quit_action.triggered.connect(self._quit)
         menu.addAction(quit_action)
@@ -3062,6 +3186,62 @@ class SmartRingApp(QObject):
         self._tray.setToolTip(f"{APP_NAME}\n快捷键: {self._config.hotkey}")
         self._tray.showMessage(APP_NAME, f"配置已重新加载\n快捷键: {self._config.hotkey}",
                                QSystemTrayIcon.Information, 2000)
+
+    def _reset_config(self) -> None:
+        """Reset config.json to factory defaults after confirmation."""
+        reply = QMessageBox.question(
+            None, "初始化 — 恢复默认设置",
+            "确定要将所有设置恢复为默认值吗？\n\n"
+            "这将：\n"
+            "  - 重置快捷键为 F12\n"
+            "  - 重置圆环尺寸和颜色\n"
+            "  - 恢复默认应用列表\n"
+            "  - 清除开机自启设置\n\n"
+            "此操作不可撤销！",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # Second confirmation
+        reply2 = QMessageBox.warning(
+            None, "确认重置",
+            "再次确认：是否确实要初始化所有设置？\n\n"
+            "配置文件将被删除并重建为出厂默认值。",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply2 != QMessageBox.Yes:
+            return
+
+        # Delete config file
+        cfg_path = config_path()
+        try:
+            if os.path.isfile(cfg_path):
+                os.remove(cfg_path)
+        except OSError as exc:
+            self._tray.showMessage(APP_NAME, f"重置失败: {exc}",
+                                   QSystemTrayIcon.Warning, 3000)
+            return
+
+        # Remove startup shortcut
+        set_auto_start(False)
+
+        # Reload (will recreate config from defaults)
+        self._config.load()
+        self._start_listener()
+        self._tray.setIcon(self._tray_icon())
+        self._tray.setToolTip(f"{APP_NAME}\n快捷键: {self._config.hotkey}")
+
+        self._tray.showMessage(
+            APP_NAME,
+            "设置已恢复为默认值。\n\n"
+            "快捷键: F12\n"
+            "模式: Hold (按住唤出)\n"
+            "右键托盘图标可重新配置。",
+            QSystemTrayIcon.Information, 5000,
+        )
 
     def _quit(self) -> None:
         self._stop_listener()

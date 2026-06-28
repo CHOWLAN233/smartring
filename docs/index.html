@@ -47,12 +47,7 @@
     display:flex;justify-content:center;align-items:center;
     margin:44px auto 0;position:relative;width:340px;height:340px;
   }
-  .ring-stage canvas{cursor:none}
-  .ring-stage .hint{
-    position:absolute;bottom:8px;left:50%;transform:translateX(-50%);
-    color:var(--muted);font-size:.75rem;pointer-events:none;
-    transition:opacity .4s;
-  }
+  .ring-stage canvas{cursor:default}
   .hero .tags{margin-top:24px;display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
   .tag{padding:4px 14px;border-radius:20px;font-size:.8rem;background:var(--card);color:var(--muted);border:1px solid var(--border)}
   .tag.accent{background:rgba(0,120,212,.15);color:var(--accent2);border-color:rgba(0,120,212,.3)}
@@ -158,7 +153,6 @@
   <p class="sub zh">环形应用启动器 — 按下快捷键唤出圆形菜单，移动鼠标选择，松开即启动。</p>
   <div class="ring-stage">
     <canvas id="ringCanvas" width="680" height="680"></canvas>
-    <div class="hint" id="ringHint">Move mouse over the ring / 移动鼠标到圆环上</div>
   </div>
   <div class="tags">
     <span class="tag accent">PyQt5</span><span class="tag">Windows</span>
@@ -241,16 +235,13 @@
 
 <script>
 /* ═══════════════════════════════════════════════════
-   Interactive Ring Preview — logic matches smartring.py exactly:
-   - ring_radius=190, center_radius=58, icon_size=38 (scaled x0.5)
-   - segment detection: _mouse_angle + _segment_for_angle
-   - show_labels=True: labels for all apps
-   - center hub text: "SmartRing"
-   - halo alpha=0 at 0.72 gradient stop
+   Static ring preview — exact rendering of app defaults:
+   ring_radius=190, center_radius=58, icon_size=38
+   bg_color=#1e1e26, accent_color=#0078D4, show_labels=True
+   Uses identical gradient stops & colour math as smartring.py
    ═══════════════════════════════════════════════════ */
 (function(){
 const canvas = document.getElementById('ringCanvas');
-const hint = document.getElementById('ringHint');
 const dpr = Math.min(window.devicePixelRatio||1, 2);
 const W = 340, H = 340;
 canvas.width = W * dpr; canvas.height = H * dpr;
@@ -258,84 +249,51 @@ canvas.style.width = W+'px'; canvas.style.height = H+'px';
 const ctx = canvas.getContext('2d');
 ctx.scale(dpr, dpr);
 
-// Exact app defaults scaled x0.5 for 340px canvas
+// App defaults (scaled x0.5 for preview)
 const RING_R = 95, HUB_R = 29, ICON_SZ = 19;
 const CX = W/2, CY = H/2;
 const apps = [
-  {name:'Notepad',     hue:210},
-  {name:'Calculator',  hue:120},
-  {name:'Explorer',    hue:0},
-  {name:'Terminal',    hue:280},
-  {name:'Browser',     hue:45},
-  {name:'VS Code',     hue:170},
+  {name:'Notepad',    hue:210},
+  {name:'Calculator', hue:120},
+  {name:'Explorer',   hue:0},
+  {name:'Terminal',   hue:280},
+  {name:'Browser',    hue:45},
+  {name:'VS Code',    hue:170},
 ];
 const N = apps.length;
-const iconR = (RING_R + HUB_R) / 2;            // matches app: (ring_r+center_r)//2
-const labelR = RING_R - 7;                     // matches app: ring_r - 14 (*0.5)
-const bg = {r:30,g:30,b:38};                    // #1e1e26
+const iconR = (RING_R + HUB_R) / 2;   // matches app: (ring_r + center_r) // 2
+const labelR = RING_R - 7;            // matches app: ring_r - 14  (*0.5)
+const bg = {r:30,g:30,b:38};          // #1e1e26
 
-let mouseX = -100, mouseY = -100, highlight = -1;
-
-canvas.addEventListener('mousemove', e => {
-  const rect = canvas.getBoundingClientRect();
-  mouseX = (e.clientX - rect.left) * (W / rect.width);
-  mouseY = (e.clientY - rect.top) * (H / rect.height);
-  updateHighlight();
-});
-canvas.addEventListener('mouseleave', () => {
-  mouseX = -100; mouseY = -100;
-  updateHighlight();
-});
-
-// ── matches app _mouse_angle + _segment_for_angle ──
-function updateHighlight(){
-  const dx = mouseX - CX, dy = mouseY - CY;
-  const dist = Math.sqrt(dx*dx + dy*dy);
-
-  if(dist < HUB_R || dist > RING_R + 18) {  // matches app: dist < center_r || dist > ring_r+35(*0.5≈18)
-    highlight = -1;
-  } else {
-    let a = Math.atan2(dy, dx);
-    // Normalise to [0, 2pi) and rotate so 0 = top (matches app)
-    a = (a + Math.PI/2) % (2*Math.PI);
-    if(a < 0) a += 2*Math.PI;
-    // Offset by half a segment (matches app: a + math.pi/n)
-    a = (a + Math.PI/N) % (2*Math.PI);
-    highlight = Math.floor(a / (2*Math.PI/N)) % N;
-  }
-
-  hint.style.opacity = highlight >= 0 ? '0' : '1';
-}
-
-// ── matches app _do_paint ──
 function draw(){
   ctx.clearRect(0, 0, W, H);
 
-  // 1. Outer soft halo (matches app gradient stops 0.0→0.55→0.72→1.0)
-  const halo = ctx.createRadialGradient(CX, CY, RING_R-5, CX, CY, RING_R+42);
-  halo.addColorStop(0, `rgba(${Math.max(0,bg.r-20)},${Math.max(0,bg.g-20)},${Math.max(0,bg.b-20)},0.18)`);
-  halo.addColorStop(0.55, `rgba(${Math.max(0,bg.r-25)},${Math.max(0,bg.g-25)},${Math.max(0,bg.b-25)},0.08)`);
+  // 1. Outer soft halo
+  const halo = ctx.createRadialGradient(CX, CY, RING_R, CX, CY, RING_R+40);
+  const hr=bg.r, hg=bg.g, hb=bg.b;
+  halo.addColorStop(0, `rgba(${Math.max(0,hr-20)},${Math.max(0,hg-20)},${Math.max(0,hb-20)},0.18)`);
+  halo.addColorStop(0.55, `rgba(${Math.max(0,hr-25)},${Math.max(0,hg-25)},${Math.max(0,hb-25)},0.08)`);
   halo.addColorStop(0.72, 'rgba(0,0,0,0)');
   halo.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = halo;
-  ctx.beginPath(); ctx.arc(CX, CY, RING_R+42, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(CX, CY, RING_R+40, 0, Math.PI*2); ctx.fill();
 
-  // 2. Ring body (matches app)
+  // 2. Ring body
   const rg = ctx.createRadialGradient(CX, CY, HUB_R, CX, CY, RING_R);
-  rg.addColorStop(0, `rgba(${Math.min(255,bg.r+35)},${Math.min(255,bg.g+35)},${Math.min(255,bg.b+35)},0.93)`);
-  rg.addColorStop(0.55, `rgba(${Math.min(255,bg.r+15)},${Math.min(255,bg.g+15)},${Math.min(255,bg.b+15)},0.91)`);
-  rg.addColorStop(0.85, `rgba(${bg.r},${bg.g},${bg.b},0.89)`);
-  rg.addColorStop(1, `rgba(${Math.max(0,bg.r-12)},${Math.max(0,bg.g-12)},${Math.max(0,bg.b-12)},0.85)`);
+  rg.addColorStop(0, `rgba(${Math.min(255,hr+35)},${Math.min(255,hg+35)},${Math.min(255,hb+35)},0.93)`);
+  rg.addColorStop(0.55, `rgba(${Math.min(255,hr+15)},${Math.min(255,hg+15)},${Math.min(255,hb+15)},0.91)`);
+  rg.addColorStop(0.85, `rgba(${hr},${hg},${hb},0.89)`);
+  rg.addColorStop(1, `rgba(${Math.max(0,hr-12)},${Math.max(0,hg-12)},${Math.max(0,hb-12)},0.85)`);
   ctx.fillStyle = rg;
   ctx.beginPath(); ctx.arc(CX, CY, RING_R, 0, Math.PI*2);
   ctx.arc(CX, CY, HUB_R, 0, Math.PI*2, true);
   ctx.fill();
-  // Inner border
+  // Inner/outer ring borders
   ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 0.5;
   ctx.beginPath(); ctx.arc(CX, CY, RING_R, 0, Math.PI*2); ctx.stroke();
   ctx.beginPath(); ctx.arc(CX, CY, HUB_R, 0, Math.PI*2); ctx.stroke();
 
-  // 4. Segment dividers (matches app)
+  // 3. Segment dividers
   ctx.strokeStyle = 'rgba(255,255,255,0.10)'; ctx.lineWidth = 0.5;
   for(let i=0; i<N; i++){
     const a = 2*Math.PI*i/N - Math.PI/2 - Math.PI/N;
@@ -345,72 +303,54 @@ function draw(){
     ctx.stroke();
   }
 
-  // 5. Centre hub (matches app)
-  const hg = ctx.createRadialGradient(CX, CY, 0, CX, CY, HUB_R);
-  hg.addColorStop(0, `rgba(${Math.min(255,bg.r+48)},${Math.min(255,bg.g+48)},${Math.min(255,bg.b+48)},0.97)`);
-  hg.addColorStop(1, `rgba(${Math.min(255,bg.r+18)},${Math.min(255,bg.g+18)},${Math.min(255,bg.b+18)},0.95)`);
-  ctx.fillStyle = hg;
+  // 4. Centre hub
+  const hubGrad = ctx.createRadialGradient(CX, CY, 0, CX, CY, HUB_R);
+  hubGrad.addColorStop(0, `rgba(${Math.min(255,hr+48)},${Math.min(255,hg+48)},${Math.min(255,hb+48)},0.97)`);
+  hubGrad.addColorStop(1, `rgba(${Math.min(255,hr+18)},${Math.min(255,hg+18)},${Math.min(255,hb+18)},0.95)`);
+  ctx.fillStyle = hubGrad;
   ctx.beginPath(); ctx.arc(CX, CY, HUB_R, 0, Math.PI*2); ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5;
-  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)'; ctx.lineWidth = 0.5; ctx.stroke();
 
-  // Center text "SmartRing" (matches app)
+  // 5. Center text "SmartRing"
   ctx.fillStyle = 'rgba(220,220,225,0.9)';
   ctx.font = 'bold 5px "Microsoft YaHei",sans-serif';
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('SmartRing', CX, CY);
 
-  // Accent dot
+  // 6. Accent dot
   ctx.fillStyle = '#0078D4';
   ctx.beginPath(); ctx.arc(CX, CY, HUB_R*0.35, 0, Math.PI*2); ctx.fill();
 
-  // 6. App icons + labels (matches app show_labels=True)
+  // 7. App icons + labels (no highlight — static display)
   for(let i=0; i<N; i++){
     const a = 2*Math.PI*i/N - Math.PI/2;
     const ix = CX + iconR*Math.cos(a);
     const iy = CY + iconR*Math.sin(a);
-    const isHi = i === highlight;
-    const sz = isHi ? ICON_SZ*1.15 : ICON_SZ;
 
-    // Icon background
-    ctx.fillStyle = `hsl(${apps[i].hue},55%,${isHi?52:42}%)`;
+    // Icon bg
+    ctx.fillStyle = `hsl(${apps[i].hue},55%,42%)`;
     ctx.beginPath();
-    ctx.roundRect(ix-sz/2, iy-sz/2, sz, sz, 5);
+    ctx.roundRect(ix-ICON_SZ/2, iy-ICON_SZ/2, ICON_SZ, ICON_SZ, 5);
     ctx.fill();
 
     // Letter
     ctx.fillStyle = '#fff';
-    ctx.font = `${isHi?'bold ':' '}${sz*0.42}px "Microsoft YaHei",sans-serif`;
+    ctx.font = `${ICON_SZ*0.42}px "Microsoft YaHei",sans-serif`;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(apps[i].name[0].toUpperCase(), ix, iy);
 
-    // Label (matches app: all apps show labels when show_labels=True)
+    // Label (plain gray text for all)
     const lx = CX + labelR*Math.cos(a);
     const ly = CY + labelR*Math.sin(a);
-    const name = apps[i].name;
-
-    if(isHi){
-      // Highlighted: pill background + bold white text
-      ctx.font = 'bold 5px "Microsoft YaHei",sans-serif';
-      const tw = ctx.measureText(name).width;
-      ctx.fillStyle = 'rgba(60,60,68,0.86)';
-      ctx.beginPath();
-      ctx.roundRect(lx-tw/2-9, ly-7, tw+18, 14, 7);
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 0.5;
-      ctx.stroke();
-      ctx.fillStyle = '#fff';
-      ctx.fillText(name, lx, ly);
-    } else {
-      // Non-highlighted: plain gray text (matches app)
-      ctx.font = '4.5px "Microsoft YaHei",sans-serif';
-      ctx.fillStyle = 'rgba(210,210,215,0.8)';
-      ctx.fillText(name, lx, ly);
-    }
+    ctx.font = '4.5px "Microsoft YaHei",sans-serif';
+    ctx.fillStyle = 'rgba(210,210,215,0.82)';
+    ctx.fillText(apps[i].name, lx, ly);
   }
 
   requestAnimationFrame(draw);
 }
+
+draw();
 
 // Lang toggle
 window.toggleLang = function(){
@@ -431,8 +371,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   document.querySelectorAll('.en').forEach(e=>e.style.display='none');
   document.querySelectorAll('.zh').forEach(e=>e.style.display='block');
 });
-
-requestAnimationFrame(draw);
 })();
 </script>
 </body>

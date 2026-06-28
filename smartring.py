@@ -881,9 +881,12 @@ class RingOverlay(QWidget):
         painter = QPainter(self)
         try:
             self._do_paint(painter)
-        except Exception:
-            pass  # prevent crash from painting errors
-        painter.end()
+        except Exception as exc:
+            import traceback
+            print(f"[SmartRing] Paint error: {exc}", file=sys.stderr)
+            traceback.print_exc()
+        finally:
+            painter.end()
 
     def _do_paint(self, painter: QPainter) -> None:
         painter.setRenderHint(QPainter.Antialiasing)
@@ -893,6 +896,7 @@ class RingOverlay(QWidget):
             return
 
         acc = self._accent
+        bg = self._bg
 
         # ── 1. Outer soft halo ───────────────────────────────────────
         halo = QRadialGradient(cx, cy, self._ring_r + 80)
@@ -915,7 +919,6 @@ class RingOverlay(QWidget):
         ring_only = ring_body.subtracted(hub)
 
         # Ring gradient — based on user-selected background colour
-        bg = self._bg
         ring_grad = QRadialGradient(cx, cy, self._ring_r)
         ring_grad.setColorAt(0.0, QColor(
             min(255, bg.red() + 35), min(255, bg.green() + 35),

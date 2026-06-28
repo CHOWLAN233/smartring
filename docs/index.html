@@ -248,11 +248,11 @@ const X=C.getContext('2d');X.scale(dpr,dpr);
 const RR=95,CR=29,IS=19;          // ring_r, center_r, icon_size (x0.5)
 const CX=W/2,CY=H/2;
 const apps=[
-  {n:'Notepad',    h:210},
-  {n:'Calculator', h:120},
-  {n:'Explorer',   h:0},
-  {n:'Terminal',   h:280},
-  {n:'Browser',    h:45},
+  {n:'记事本',    h:210},
+  {n:'计算器',    h:120},
+  {n:'文件资源管理器',    h:h:0},
+  {n:'命令提示符',    h:280},
+  {n:'浏览器',    h::45},
   {n:'VS Code',    h:170},
 ];
 const N=apps.length;
@@ -316,9 +316,7 @@ function draw(){
   X.textAlign='center';X.textBaseline='middle';
   X.fillText('SmartRing',CX,CY);
 
-  // Accent dot: max(3, center_r*0.35)
-  X.fillStyle='#0078D4';
-  X.beginPath();X.arc(CX,CY,Math.max(1.5,CR*0.35),0,Math.PI*2);X.fill();
+  // (accent dot removed per user request)
 
   // 6. App icons & labels
   for(let i=0;i<N;i++){

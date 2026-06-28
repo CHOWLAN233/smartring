@@ -101,6 +101,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "center_radius": 58,          # centre hub radius (px)
     "icon_size": 38,              # app icon size (px)
     "accent_color": "#0078D4",   # highlight / accent colour
+    "bg_color": "#1e1e26",         # ring background base colour
     "theme": "dark",             # "light" or "dark" (wizard always starts light)
     "auto_start": False,         # launch with Windows
     "show_labels": True,         # show app names in the ring
@@ -544,6 +545,10 @@ class ConfigManager:
         return str(self.data.get("accent_color", "#0078D4"))
 
     @property
+    def bg_color(self) -> str:
+        return str(self.data.get("bg_color", "#1e1e26"))
+
+    @property
     def theme(self) -> str:
         t = self.data.get("theme", "dark")
         return t if t in ("light", "dark") else "dark"
@@ -589,8 +594,10 @@ class RingOverlay(QWidget):
         center_radius: int = 58,
         icon_size: int = 38,
         accent_color: str = "#0078D4",
+        bg_color: str = "#1e1e26",
         animation_duration: int = 220,
         show_labels: bool = True,
+        preview_mode: bool = False,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
@@ -599,8 +606,10 @@ class RingOverlay(QWidget):
         self._center_r = center_radius
         self._icon_sz = icon_size
         self._accent = hex_to_qcolor(accent_color)
+        self._bg = hex_to_qcolor(bg_color)
         self._anim_ms = animation_duration
         self._show_labels = show_labels
+        self._preview_mode = preview_mode
         self._highlighted: int = -1
         self._anim_highlight: float = -1.0
         self._launched = False
@@ -887,8 +896,12 @@ class RingOverlay(QWidget):
 
         # ── 1. Outer soft halo ───────────────────────────────────────
         halo = QRadialGradient(cx, cy, self._ring_r + 80)
-        halo.setColorAt(0.0, QColor(12, 12, 16, 40))
-        halo.setColorAt(0.8, QColor(8, 8, 10, 15))
+        halo.setColorAt(0.0, QColor(
+            max(0, bg.red() - 20), max(0, bg.green() - 20),
+            max(0, bg.blue() - 20), 45))
+        halo.setColorAt(0.8, QColor(
+            max(0, bg.red() - 25), max(0, bg.green() - 25),
+            max(0, bg.blue() - 25), 18))
         halo.setColorAt(1.0, QColor(0, 0, 0, 0))
         painter.setBrush(QBrush(halo))
         painter.setPen(Qt.NoPen)
@@ -901,12 +914,20 @@ class RingOverlay(QWidget):
         hub.addEllipse(QPoint(cx, cy), self._center_r, self._center_r)
         ring_only = ring_body.subtracted(hub)
 
-        # Ring gradient — dark with subtle radial lightening toward centre
+        # Ring gradient — based on user-selected background colour
+        bg = self._bg
         ring_grad = QRadialGradient(cx, cy, self._ring_r)
-        ring_grad.setColorAt(0.0, QColor(40, 40, 46, 235))
-        ring_grad.setColorAt(0.55, QColor(32, 32, 38, 230))
-        ring_grad.setColorAt(0.85, QColor(24, 24, 28, 225))
-        ring_grad.setColorAt(1.0, QColor(18, 18, 20, 215))
+        ring_grad.setColorAt(0.0, QColor(
+            min(255, bg.red() + 35), min(255, bg.green() + 35),
+            min(255, bg.blue() + 35), 238))
+        ring_grad.setColorAt(0.55, QColor(
+            min(255, bg.red() + 15), min(255, bg.green() + 15),
+            min(255, bg.blue() + 15), 232))
+        ring_grad.setColorAt(0.85, QColor(
+            bg.red(), bg.green(), bg.blue(), 228))
+        ring_grad.setColorAt(1.0, QColor(
+            max(0, bg.red() - 12), max(0, bg.green() - 12),
+            max(0, bg.blue() - 12), 218))
         painter.fillPath(ring_only, QBrush(ring_grad))
 
         # Subtle inner border on ring
@@ -935,20 +956,39 @@ class RingOverlay(QWidget):
 
         # ── 5. Centre hub ────────────────────────────────────────────
         hub_grad = QRadialGradient(cx, cy, self._center_r)
-        hub_grad.setColorAt(0.0, QColor(50, 50, 58, 248))
-        hub_grad.setColorAt(1.0, QColor(32, 32, 38, 242))
+        hub_grad.setColorAt(0.0, QColor(
+            min(255, bg.red() + 48), min(255, bg.green() + 48),
+            min(255, bg.blue() + 48), 248))
+        hub_grad.setColorAt(1.0, QColor(
+            min(255, bg.red() + 18), min(255, bg.green() + 18),
+            min(255, bg.blue() + 18), 242))
         painter.setBrush(QBrush(hub_grad))
         painter.setPen(QPen(QColor(255, 255, 255, 15), 1))
         painter.drawEllipse(QPoint(cx, cy), self._center_r, self._center_r)
 
         # Centre text
         painter.setPen(QColor(220, 220, 225))
-        font = QFont("Microsoft YaHei", 10, QFont.Bold)
-        painter.setFont(font)
-        painter.drawText(
-            QRect(cx - self._center_r, cy - 8, self._center_r * 2, 16),
-            Qt.AlignCenter, APP_NAME,
-        )
+        if getattr(self, '_preview_mode', False):
+            font = QFont("Microsoft YaHei", 8, QFont.Bold)
+            painter.setFont(font)
+            painter.drawText(
+                QRect(cx - self._center_r, cy - 14, self._center_r * 2, 12),
+                Qt.AlignCenter, "预览模式",
+            )
+            font2 = QFont("Microsoft YaHei", 6)
+            painter.setFont(font2)
+            painter.setPen(QColor(160, 160, 170))
+            painter.drawText(
+                QRect(cx - self._center_r, cy + 2, self._center_r * 2, 12),
+                Qt.AlignCenter, "点击空白或 Esc 关闭",
+            )
+        else:
+            font = QFont("Microsoft YaHei", 10, QFont.Bold)
+            painter.setFont(font)
+            painter.drawText(
+                QRect(cx - self._center_r, cy - 8, self._center_r * 2, 16),
+                Qt.AlignCenter, APP_NAME,
+            )
 
         # ── 6. App icons & labels ────────────────────────────────────
         icon_r = (self._ring_r + self._center_r) // 2
@@ -1256,19 +1296,11 @@ class SettingsDialog(QWidget):
         # ═══════════════════════════════════════════════════════════════
         card1, c1 = self._make_card("快捷键与触发模式")
 
-        hotkey_grid = QGridLayout()
-        hotkey_grid.setSpacing(10)
-
-        # Left column: hotkey capture + keyboard visual
-        hotkey_left = QVBoxLayout()
-        hotkey_left.setSpacing(8)
-
-        # Hotkey capture row
+        # Row 1: hotkey input (full width)
         hk_row = QHBoxLayout()
         hk_row.addWidget(QLabel("快捷键组合:"))
         self._hotkey_edit = QLineEdit()
         self._hotkey_edit.setPlaceholderText("例如: f12  /  ctrl+f12  /  alt+shift+a")
-        self._hotkey_edit.setMinimumWidth(200)
         self._hotkey_edit.setStyleSheet(
             "QLineEdit { font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; }"
         )
@@ -1276,25 +1308,22 @@ class SettingsDialog(QWidget):
             lambda t: self._keyboard_widget.set_hotkey(t)
         )
         hk_row.addWidget(self._hotkey_edit, stretch=1)
-        hotkey_left.addLayout(hk_row)
+        c1.addLayout(hk_row)
 
-        # Visual keyboard mockup
+        # Row 2: visual keyboard (full width)
         self._keyboard_widget = _KeyboardVisual()
-        hotkey_left.addWidget(self._keyboard_widget)
+        c1.addWidget(self._keyboard_widget)
 
-        hotkey_grid.addLayout(hotkey_left, 0, 0, 2, 1)
+        # Row 3: trigger mode + show labels (below keyboard)
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(16)
 
-        # Right column: mode + show labels
-        mode_group = QVBoxLayout()
-        mode_group.setSpacing(12)
-
-        # Trigger mode as dropdown
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("触发模式:"))
+        mode_layout = QHBoxLayout()
+        mode_layout.addWidget(QLabel("触发模式:"))
         self._mode_combo = QComboBox()
         self._mode_combo.addItem("Hold — 按住唤出，松开启动", "hold")
         self._mode_combo.addItem("Toggle — 按一下显示，再按隐藏", "toggle")
-        self._mode_combo.setMinimumWidth(260)
+        self._mode_combo.setMinimumWidth(240)
         self._mode_combo.setStyleSheet(
             "QComboBox { background: #1e1e22; border: 1px solid #444; border-radius: 4px; "
             "padding: 6px 10px; color: #e0e0e0; font-size: 13px; }"
@@ -1302,22 +1331,18 @@ class SettingsDialog(QWidget):
             "QComboBox QAbstractItemView { background: #2b2b30; color: #e0e0e0; "
             "selection-background-color: #0078D4; border: 1px solid #444; }"
         )
-        mode_row.addWidget(self._mode_combo)
-        mode_row.addStretch()
-        mode_group.addLayout(mode_row)
+        mode_layout.addWidget(self._mode_combo)
+        bottom_row.addLayout(mode_layout)
 
-        # Show labels
+        bottom_row.addSpacing(20)
+
         self._show_labels_cb = QCheckBox("在圆环中显示应用名称")
         self._show_labels_cb.setToolTip("取消勾选则圆环中只显示图标，不显示应用名")
         self._show_labels_cb.setStyleSheet("QCheckBox { color: #d0d0d5; font-size: 13px; }")
-        mode_group.addWidget(self._show_labels_cb)
+        bottom_row.addWidget(self._show_labels_cb)
 
-        mode_group.addStretch()
-        hotkey_grid.addLayout(mode_group, 0, 1)
-
-        hotkey_grid.setColumnStretch(0, 3)
-        hotkey_grid.setColumnStretch(1, 1)
-        c1.addLayout(hotkey_grid)
+        bottom_row.addStretch()
+        c1.addLayout(bottom_row)
 
         clayout.addWidget(card1)
 
@@ -1338,6 +1363,7 @@ class SettingsDialog(QWidget):
             center_radius=self._config.center_radius,
             icon_size=self._config.icon_size,
             accent_color=self._config.accent_color,
+            bg_color=self._config.bg_color,
         )
         preview_layout.addWidget(self._settings_preview, alignment=Qt.AlignCenter)
         app_row.addWidget(preview_container)
@@ -1347,28 +1373,52 @@ class SettingsDialog(QWidget):
         ctrls.setSpacing(10)
 
         # Accent colour
-        color_label = QLabel("主题色:")
+        color_label = QLabel("主题色 (高亮):")
         color_label.setStyleSheet("font-weight: bold; color: #ccc;")
         ctrls.addWidget(color_label)
         color_row = QHBoxLayout()
         self._color_swatch = QLabel()
-        self._color_swatch.setFixedSize(32, 32)
+        self._color_swatch.setFixedSize(28, 28)
         self._color_swatch.setStyleSheet(
             f"background-color: {self._config.accent_color}; "
             "border-radius: 6px; border: 2px solid #555;"
         )
         color_row.addWidget(self._color_swatch)
         self._color_edit = QLineEdit(self._config.accent_color)
-        self._color_edit.setMaximumWidth(80)
+        self._color_edit.setMaximumWidth(78)
         self._color_edit.textChanged.connect(self._on_color_text_changed)
         color_row.addWidget(self._color_edit)
-        pick_btn = QPushButton("选择颜色...")
+        pick_btn = QPushButton("...")
+        pick_btn.setMaximumWidth(30)
         pick_btn.clicked.connect(self._pick_color)
         color_row.addWidget(pick_btn)
         color_row.addStretch()
         ctrls.addLayout(color_row)
 
-        ctrls.addSpacing(4)
+        # Background colour
+        bg_label = QLabel("背景色:")
+        bg_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        ctrls.addWidget(bg_label)
+        bg_color_row = QHBoxLayout()
+        self._bg_swatch = QLabel()
+        self._bg_swatch.setFixedSize(28, 28)
+        self._bg_swatch.setStyleSheet(
+            f"background-color: {self._config.bg_color}; "
+            "border-radius: 6px; border: 2px solid #555;"
+        )
+        bg_color_row.addWidget(self._bg_swatch)
+        self._bg_edit = QLineEdit(self._config.bg_color)
+        self._bg_edit.setMaximumWidth(78)
+        self._bg_edit.textChanged.connect(self._on_bg_color_text_changed)
+        bg_color_row.addWidget(self._bg_edit)
+        bg_pick_btn = QPushButton("...")
+        bg_pick_btn.setMaximumWidth(30)
+        bg_pick_btn.clicked.connect(self._pick_bg_color)
+        bg_color_row.addWidget(bg_pick_btn)
+        bg_color_row.addStretch()
+        ctrls.addLayout(bg_color_row)
+
+        ctrls.addSpacing(2)
 
         # Size controls
         def _settings_update_preview(*args):
@@ -1383,7 +1433,8 @@ class SettingsDialog(QWidget):
             self._icon_spin.setMaximum(max_icon)
 
             if hasattr(self, '_settings_preview'):
-                self._settings_preview.set_params(rr, cr, sz, acc)
+                bg = self._bg_edit.text().strip() or "#1e1e26"
+                self._settings_preview.set_params(rr, cr, sz, acc, bg)
 
         size_label = QLabel("圆环尺寸:")
         size_label.setStyleSheet("font-weight: bold; color: #ccc;")
@@ -1615,7 +1666,7 @@ class SettingsDialog(QWidget):
         path, _ = QFileDialog.getOpenFileName(
             self, "选择应用程序",
             "C:\\",
-            "EXE 程序 (*.exe);;快捷方式 (*.lnk);;所有文件 (*.*)",
+            "可执行程序 (*.exe *.lnk);;EXE 程序 (*.exe);;快捷方式 (*.lnk);;所有文件 (*.*)",
         )
         if path:
             line_edit.setText(path)
@@ -1631,11 +1682,34 @@ class SettingsDialog(QWidget):
             self._color_edit.setText(color.name().upper())
             self._update_settings_preview()
 
+    def _pick_bg_color(self) -> None:
+        color = QColorDialog.getColor(
+            hex_to_qcolor(self._bg_edit.text() or "#1e1e26"), self, "选择背景色"
+        )
+        if color.isValid():
+            self._bg_swatch.setStyleSheet(
+                f"background-color: {color.name()}; "
+                "border-radius: 6px; border: 1px solid #555;"
+            )
+            self._bg_edit.setText(color.name().upper())
+            self._update_settings_preview()
+
     def _on_color_text_changed(self, text: str) -> None:
         try:
             c = hex_to_qcolor(text)
             self._accent_color = c
             self._color_swatch.setStyleSheet(
+                f"background-color: {text}; "
+                "border-radius: 6px; border: 1px solid #555;"
+            )
+        except Exception:
+            pass
+        self._update_settings_preview()
+
+    def _on_bg_color_text_changed(self, text: str) -> None:
+        try:
+            c = hex_to_qcolor(text)
+            self._bg_swatch.setStyleSheet(
                 f"background-color: {text}; "
                 "border-radius: 6px; border: 1px solid #555;"
             )
@@ -1651,7 +1725,8 @@ class SettingsDialog(QWidget):
         cr = self._center_spin.value()
         sz = self._icon_spin.value()
         acc = self._color_edit.text().strip() or "#0078D4"
-        self._settings_preview.set_params(rr, cr, sz, acc)
+        bg = self._bg_edit.text().strip() or "#1e1e26"
+        self._settings_preview.set_params(rr, cr, sz, acc, bg)
 
     def _load(self) -> None:
         self._hotkey_edit.setText(self._config.hotkey)
@@ -1666,6 +1741,7 @@ class SettingsDialog(QWidget):
         self._icon_spin.setText(str(self._config.icon_size))
         self._anim_edit.setText(str(self._config.animation_duration))
         self._color_edit.setText(self._config.accent_color)
+        self._bg_edit.setText(self._config.bg_color)
         # Update keyboard visual
         if hasattr(self, '_keyboard_widget'):
             self._keyboard_widget.set_hotkey(self._config.hotkey)
@@ -1718,6 +1794,7 @@ class SettingsDialog(QWidget):
         self._config.data["hotkey"] = hotkey
         self._config.data["mode"] = self._mode_combo.currentData() or "hold"
         self._config.data["accent_color"] = self._color_edit.text().strip()
+        self._config.data["bg_color"] = self._bg_edit.text().strip() or "#1e1e26"
         self._config.data["auto_start"] = self._auto_start_cb.isChecked()
         self._config.data["show_labels"] = self._show_labels_cb.isChecked()
 
@@ -1783,6 +1860,7 @@ class SettingsDialog(QWidget):
         except ValueError:
             anim_ms = 220
         accent = self._color_edit.text().strip() or "#0078D4"
+        bg = self._bg_edit.text().strip() or "#1e1e26"
         show_labels = self._show_labels_cb.isChecked()
 
         self._preview_ring = RingOverlay(
@@ -1791,8 +1869,10 @@ class SettingsDialog(QWidget):
             center_radius=center_r,
             icon_size=icon_sz,
             accent_color=accent,
+            bg_color=bg,
             animation_duration=anim_ms,
             show_labels=show_labels,
+            preview_mode=True,
         )
         # On dismiss or click, re-show settings (preview only, no launch)
         self._preview_ring.dismissed.connect(self._on_preview_dismissed)
@@ -1970,6 +2050,7 @@ class RingPreview(QWidget):
         center_radius: int = 58,
         icon_size: int = 38,
         accent_color: str = "#0078D4",
+        bg_color: str = "#1e1e26",
         parent=None,
     ):
         super().__init__(parent)
@@ -1977,6 +2058,7 @@ class RingPreview(QWidget):
         self.center_r = center_radius
         self.icon_sz = icon_size
         self.accent = accent_color
+        self.bg = bg_color
         self.setFixedSize(220, 220)
         self.setStyleSheet("background: transparent;")
 
@@ -1997,10 +2079,13 @@ class RingPreview(QWidget):
         r_icon = (r_outer + r_inner) / 2
 
         acc = hex_to_qcolor(self.accent)
+        bg = hex_to_qcolor(self.bg)
 
         # ── soft backdrop ───────────────────────────────────────────
         halo = QRadialGradient(cx, cy, r_outer + 16)
-        halo.setColorAt(0.0, QColor(15, 15, 20, 50))
+        halo.setColorAt(0.0, QColor(
+            max(0, bg.red() - 20), max(0, bg.green() - 20),
+            max(0, bg.blue() - 20), 55))
         halo.setColorAt(1.0, QColor(0, 0, 0, 0))
         painter.setBrush(QBrush(halo))
         painter.setPen(Qt.NoPen)
@@ -2008,9 +2093,14 @@ class RingPreview(QWidget):
 
         # ── ring body ───────────────────────────────────────────────
         ring_grad = QRadialGradient(cx, cy, r_outer)
-        ring_grad.setColorAt(0.0, QColor(50, 50, 58, 235))
-        ring_grad.setColorAt(0.5, QColor(38, 38, 44, 230))
-        ring_grad.setColorAt(1.0, QColor(24, 24, 28, 220))
+        ring_grad.setColorAt(0.0, QColor(
+            min(255, bg.red() + 40), min(255, bg.green() + 40),
+            min(255, bg.blue() + 40), 235))
+        ring_grad.setColorAt(0.5, QColor(
+            min(255, bg.red() + 20), min(255, bg.green() + 20),
+            min(255, bg.blue() + 20), 230))
+        ring_grad.setColorAt(1.0, QColor(
+            bg.red(), bg.green(), bg.blue(), 220))
         painter.setBrush(QBrush(ring_grad))
         painter.setPen(QPen(QColor(255, 255, 255, 20), 1))
         painter.drawEllipse(QPoint(int(cx), int(cy)), int(r_outer), int(r_outer))
@@ -2028,8 +2118,12 @@ class RingPreview(QWidget):
 
         # ── centre hub ──────────────────────────────────────────────
         hub_grad = QRadialGradient(cx, cy, r_inner)
-        hub_grad.setColorAt(0.0, QColor(55, 55, 65, 248))
-        hub_grad.setColorAt(1.0, QColor(38, 38, 45, 242))
+        hub_grad.setColorAt(0.0, QColor(
+            min(255, bg.red() + 50), min(255, bg.green() + 50),
+            min(255, bg.blue() + 50), 248))
+        hub_grad.setColorAt(1.0, QColor(
+            min(255, bg.red() + 20), min(255, bg.green() + 20),
+            min(255, bg.blue() + 20), 242))
         painter.setBrush(QBrush(hub_grad))
         painter.setPen(QPen(QColor(255, 255, 255, 18), 1))
         painter.drawEllipse(QPoint(int(cx), int(cy)), int(r_inner), int(r_inner))
@@ -2061,11 +2155,13 @@ class RingPreview(QWidget):
 
         painter.end()
 
-    def set_params(self, ring_r: int, center_r: int, icon_sz: int, accent: str) -> None:
+    def set_params(self, ring_r: int, center_r: int, icon_sz: int,
+                   accent: str, bg: str = "#1e1e26") -> None:
         self.ring_r = ring_r
         self.center_r = center_r
         self.icon_sz = icon_sz
         self.accent = accent
+        self.bg = bg
         self.update()
 
     def set_app_count(self, n: int) -> None:
@@ -2467,7 +2563,7 @@ class SetupWizard(QDialog):
     def _browse_wiz_file(self, line_edit: QLineEdit) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "选择应用程序", "C:\\",
-            "EXE 程序 (*.exe);;快捷方式 (*.lnk);;所有文件 (*.*)",
+            "可执行程序 (*.exe *.lnk);;EXE 程序 (*.exe);;快捷方式 (*.lnk);;所有文件 (*.*)",
         )
         if path:
             line_edit.setText(path)
@@ -2509,7 +2605,8 @@ class SetupWizard(QDialog):
         cr = self._config_data["center_radius"]
         sz = self._config_data["icon_size"]
         acc = self._config_data["accent_color"]
-        self._ring_preview = RingPreview(r, cr, sz, acc)
+        bg = self._config_data.get("bg_color", "#1e1e26")
+        self._ring_preview = RingPreview(r, cr, sz, acc, bg)
         preview_layout.addWidget(self._ring_preview, alignment=Qt.AlignCenter)
 
         preview_hint = QLabel("← 调整右侧参数实时查看效果")
@@ -2587,7 +2684,9 @@ class SetupWizard(QDialog):
             self._config_data["center_radius"] = cr2
             self._config_data["icon_size"] = sz2
             if hasattr(self, '_ring_preview'):
-                self._ring_preview.set_params(rr, cr2, sz2, self._config_data["accent_color"])
+                self._ring_preview.set_params(rr, cr2, sz2,
+                    self._config_data["accent_color"],
+                    self._config_data.get("bg_color", "#1e1e26"))
 
         size_grid = QGridLayout()
         size_grid.setSpacing(6)
@@ -2669,7 +2768,8 @@ class SetupWizard(QDialog):
             rr = self._ring_spin.value()
             cr2 = self._center_spin.value()
             sz2 = self._icon_spin.value()
-            self._ring_preview.set_params(rr, cr2, sz2, hex_code)
+            self._ring_preview.set_params(rr, cr2, sz2, hex_code,
+                self._config_data.get("bg_color", "#1e1e26"))
 
     def _page_done(self) -> QWidget:
         page = QWidget()
@@ -3111,6 +3211,7 @@ class SmartRingApp(QObject):
                 center_radius=self._config.center_radius,
                 icon_size=self._config.icon_size,
                 accent_color=self._config.accent_color,
+                bg_color=self._config.bg_color,
                 animation_duration=self._config.animation_duration,
                 show_labels=self._config.show_labels,
             )
@@ -3121,6 +3222,7 @@ class SmartRingApp(QObject):
             self._ring._center_r = self._config.center_radius
             self._ring._icon_sz = self._config.icon_size
             self._ring._accent = hex_to_qcolor(self._config.accent_color)
+            self._ring._bg = hex_to_qcolor(self._config.bg_color)
             self._ring._anim_ms = self._config.animation_duration
             self._ring._show_labels = self._config.show_labels
             self._ring._apps = apps

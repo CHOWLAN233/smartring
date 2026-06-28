@@ -643,7 +643,9 @@ class RingOverlay(QWidget):
             | Qt.NoDropShadowWindowHint
         )
         self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self.setAutoFillBackground(False)
         self.setWindowTitle(APP_NAME)
         self.setMouseTracking(True)
 
@@ -1063,8 +1065,12 @@ class RingOverlay(QWidget):
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton and self._highlighted >= 0:
-            self._launched = True
-            self.app_launched.emit(self._highlighted)
+            if getattr(self, '_preview_mode', False):
+                # Preview mode: clicking an app icon does nothing
+                pass
+            else:
+                self._launched = True
+                self.app_launched.emit(self._highlighted)
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event) -> None:

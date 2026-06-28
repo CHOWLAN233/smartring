@@ -45,7 +45,7 @@
   .hero .sub{font-size:1.15rem;color:var(--muted);margin-top:14px;max-width:600px;margin-inline:auto}
   .ring-stage{
     display:flex;justify-content:center;align-items:center;
-    margin:44px auto 0;position:relative;width:340px;height:340px;
+    margin:44px auto 0;position:relative;width:500px;height:500px;
   }
   .ring-stage canvas{cursor:default}
   .hero .tags{margin-top:24px;display:flex;justify-content:center;gap:10px;flex-wrap:wrap}
@@ -128,7 +128,7 @@
     .hero h1{font-size:2rem}
     .feat-grid{grid-template-columns:1fr}
     .compare{grid-template-columns:1fr}
-    .ring-stage{width:280px;height:280px}
+    .ring-stage{width:500px;height:500px}
     nav .links{gap:12px}
   }
 </style>
@@ -241,11 +241,11 @@
 (function(){
 const C=document.getElementById('ringCanvas');
 const dpr=Math.min(window.devicePixelRatio||1,2);
-const W=340,H=340;
+const W=500,H=500;
 C.width=W*dpr;C.height=H*dpr;C.style.width=W+'px';C.style.height=H+'px';
 const X=C.getContext('2d');X.scale(dpr,dpr);
 
-const RR=95,CR=29,IS=19;          // ring_r, center_r, icon_size (x0.5)
+const RR=143,CR=44,IS=29;          // ring_r, center_r, icon_size (x0.5)
 const CX=W/2,CY=H/2;
 const apps=[
   {n:'记事本', h:210},
@@ -257,7 +257,7 @@ const apps=[
 ];
 const N=apps.length;
 const iR=(RR+CR)/2;                // icon_r = (ring_r+center_r)//2
-const lR=RR-7;                     // label_r = ring_r-14 (x0.5)
+const lR=RR-10;                     // label_r = ring_r-14 (x0.5)
 const B={r:30,g:30,b:38};          // bg_color #1e1e26
 
 function A(v){return v/255;}       // alpha 0-255 to 0-1
@@ -312,7 +312,7 @@ function draw(){
 
   // Center text: QColor(220,220,225), QFont('Microsoft YaHei',10,Bold)
   X.fillStyle='rgb(220,220,225)';
-  X.font='bold 5px "Microsoft YaHei",sans-serif';
+  X.font='bold 8px "Microsoft YaHei",sans-serif';
   X.textAlign='center';X.textBaseline='middle';
   X.fillText('SmartRing',CX,CY);
 
@@ -333,7 +333,7 @@ function draw(){
 
     // Label: QColor(210,210,215), QFont('Microsoft YaHei',9)
     const lx=CX+lR*Math.cos(a), ly=CY+lR*Math.sin(a);
-    X.font='4.5px "Microsoft YaHei",sans-serif';
+    X.font='7px "Microsoft YaHei",sans-serif';
     X.fillStyle='rgb(210,210,215)';
     X.fillText(apps[i].n,lx,ly);
   }

@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-SmartRing — Circular Application Launcher
-Inspired by Logitech Action Ring.
+SmartRing — Circular Application Launcher / 环形应用启动器
 
 Press a configurable hotkey (default F12) to summon a ring of application
-shortcuts around your cursor.  Move the mouse toward an app to select it,
+shortcuts around your cursor. Move the mouse toward an app to select it,
 then release the hotkey (or click) to launch.
 
+按下可配置快捷键（默认 F12）在光标周围唤出一圈应用程序快捷方式。
+移动鼠标选择应用，松开快捷键（或点击）即可启动。
+
 All settings — hotkey, ring look, app list — live in config.json next to
-this script.  Edit it by hand or right-click the tray icon → Settings.
+this script. Edit it by hand or right-click the tray icon → Settings.
 
 Run without a console window:
     pythonw SmartRing.pyw
@@ -2617,7 +2619,7 @@ class SetupWizard(QDialog):
         layout.addWidget(title)
 
         desc = QLabel(
-            "SmartRing 是受罗技 Action Ring 启发的环形应用启动器。<br><br>"
+            "SmartRing 是一个环形应用启动器，灵感来自鼠标配套软件中的环形菜单。<br><br>"
             "<b>按下快捷键</b> → 光标周围弹出环形菜单 → <b>移动鼠标选择应用</b> → 松开即启动<br><br>"
             "接下来几步将帮助您完成初始设置。"
         )

@@ -60,6 +60,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
     QColorDialog,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFileIconProvider,
@@ -1030,7 +1031,120 @@ class RingOverlay(QWidget):
 
 
 # =============================================================================
-# Settings Dialog  —  modern design
+# _KeyboardVisual  —  simulated keyboard reference for hotkey config
+# =============================================================================
+
+class _KeyboardVisual(QWidget):
+    """Shows a simplified keyboard layout highlighting the captured hotkey."""
+
+    # Keys to display, grouped by row
+    ROWS = [
+        # Row 0: function keys
+        ["Esc"] + [f"F{i}" for i in range(1, 13)] + ["PrtSc", "ScrLk", "Pause"],
+        # Row 1: number row
+        ["~\n`", "!\n1", "@\n2", "#\n3", "$\n4", "%\n5", "^\n6", "&\n7", "*\n8", "(\n9", ")\n0", "_\n-", "+\n=", "Backspc"],
+        # Row 2: QWERTY top
+        ["Tab", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "{\n[", "}\n]", "|\n\\"],
+        # Row 3: home row
+        ["Caps", "A", "S", "D", "F", "G", "H", "J", "K", "L", ":\n;", '"\n\'', "Enter"],
+        # Row 4: bottom
+        ["Shift", "Z", "X", "C", "V", "B", "N", "M", "<\n,", ">\n.", "?\n/", "Shift"],
+        # Row 5: modifiers
+        ["Ctrl", "Win", "Alt", "Space", "Alt", "Win", "Menu", "Ctrl"],
+    ]
+
+    # Wide keys (relative widths)
+    WIDE = {"Backspc": 2.2, "Tab": 1.6, "Caps": 1.9, "Enter": 2.3,
+            "Shift": 2.5, "Ctrl": 1.5, "Win": 1.3, "Alt": 1.3,
+            "Menu": 1.3, "Space": 6.0, "Esc": 1.0, "PrtSc": 1.0,
+            "ScrLk": 1.0, "Pause": 1.0}
+
+    MOD_KEYS = {"Ctrl", "Alt", "Shift", "Win", "Menu"}
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._highlighted_keys: set = set()
+        self.setFixedHeight(165)
+        self.setMinimumWidth(400)
+        self.setMouseTracking(True)
+
+    def set_hotkey(self, hotkey_str: str) -> None:
+        """Highlight keys based on hotkey string like 'ctrl+f12'."""
+        self._highlighted_keys.clear()
+        for part in hotkey_str.lower().split("+"):
+            part = part.strip()
+            if part in ("ctrl", "control"):
+                self._highlighted_keys.add("Ctrl")
+            elif part in ("alt", "menu"):
+                self._highlighted_keys.add("Alt")
+            elif part in ("shift",):
+                self._highlighted_keys.add("Shift")
+            elif part in ("win", "cmd", "windows"):
+                self._highlighted_keys.add("Win")
+            elif part.startswith("f") and part[1:].isdigit():
+                self._highlighted_keys.add(part.upper())
+            elif len(part) == 1:
+                self._highlighted_keys.add(part.upper())
+        self.update()
+
+    def paintEvent(self, _event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        w = self.width()
+        base_key_w = 38
+        key_h = 24
+        gap = 3
+        row_y_start = 2
+
+        for row_idx, row_keys in enumerate(self.ROWS):
+            y = row_y_start + row_idx * (key_h + gap)
+            x = 4
+
+            # Center the function row
+            if row_idx == 0:
+                total_w = sum(self.WIDE.get(k, 1.0) * base_key_w + gap for k in row_keys) - gap
+                x = max(4, (w - total_w) // 2)
+
+            for key_name in row_keys:
+                width_mult = self.WIDE.get(key_name, 1.0)
+                kw = int(base_key_w * width_mult)
+
+                # Highlight?
+                is_hi = key_name in self._highlighted_keys
+                is_mod = key_name in self.MOD_KEYS
+
+                if is_hi:
+                    painter.setBrush(QBrush(QColor("#0078D4")))
+                    painter.setPen(QPen(QColor("#50a0ff"), 1.5))
+                elif is_mod:
+                    painter.setBrush(QBrush(QColor(58, 58, 65)))
+                    painter.setPen(QPen(QColor(90, 90, 100), 1))
+                else:
+                    painter.setBrush(QBrush(QColor(48, 48, 54)))
+                    painter.setPen(QPen(QColor(72, 72, 78), 1))
+
+                rect = QRect(int(x), int(y), kw - gap, key_h)
+                painter.drawRoundedRect(rect, 3, 3)
+
+                # Key label
+                if is_hi:
+                    painter.setPen(QColor(255, 255, 255))
+                else:
+                    painter.setPen(QColor(180, 180, 185))
+                font = QFont("Microsoft YaHei", 7)
+                painter.setFont(font)
+                # Show first line only for dual labels
+                label = key_name.split("\n")[0]
+                painter.drawText(rect, Qt.AlignCenter, label)
+
+                x += kw
+
+        painter.end()
+
+
+# =============================================================================
+# SettingsDialog  —  modern design
 # =============================================================================
 
 class SettingsDialog(QWidget):
@@ -1043,26 +1157,59 @@ class SettingsDialog(QWidget):
         self._config = config
         self._app_rows: List[Tuple[QLineEdit, QLineEdit, QLineEdit]] = []
         self._accent_color = hex_to_qcolor(config.accent_color)
+        self._preview_ring = None  # live ring preview after save
         self._setup_ui()
         self._load()
 
     # ── UI construction ────────────────────────────────────────────────
 
+    def _make_card(self, title: str) -> Tuple[QFrame, QVBoxLayout]:
+        """Create a styled card frame with a visible title.
+
+        Returns (card_frame, content_layout) — add widgets to content_layout.
+        """
+        card = QFrame()
+        card.setStyleSheet(
+            "QFrame#card { background-color: #222228; border: 1px solid #3a3a42; "
+            "border-radius: 10px; }"
+        )
+        card.setObjectName("card")
+        outer = QVBoxLayout(card)
+        outer.setContentsMargins(16, 12, 16, 14)
+        outer.setSpacing(8)
+
+        # Card title
+        title_lbl = QLabel(f"<b style='color:#f0f0f0; font-size:14px;'>{title}</b>")
+        outer.addWidget(title_lbl)
+
+        # Separator line
+        sep = QFrame()
+        sep.setFrameShape(QFrame.HLine)
+        sep.setStyleSheet("QFrame { color: #3a3a42; }")
+        outer.addWidget(sep)
+
+        # Content area — caller adds widgets here
+        content = QVBoxLayout()
+        content.setSpacing(8)
+        outer.addLayout(content)
+
+        return card, content
+
     def _setup_ui(self) -> None:
         self.setWindowTitle(f"{APP_NAME} — 设置")
         self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        self.setMinimumSize(700, 560)
-        self.resize(720, 600)
+        self.setMinimumSize(820, 680)
+        self.resize(860, 720)
 
         # Main layout
         outer = QVBoxLayout(self)
         outer.setSpacing(0)
-        outer.setContentsMargins(24, 20, 24, 20)
+        outer.setContentsMargins(24, 16, 24, 16)
 
         # Title
         title = QLabel(f"<h2 style='color:#e0e0e0;'>{APP_NAME} 设置</h2>")
         outer.addWidget(title)
-        outer.addSpacing(16)
+        outer.addSpacing(12)
 
         # Scroll area for all content
         scroll = QScrollArea()
@@ -1073,12 +1220,14 @@ class SettingsDialog(QWidget):
         content = QWidget()
         content.setStyleSheet("background: transparent;")
         clayout = QVBoxLayout(content)
-        clayout.setSpacing(14)
+        clayout.setSpacing(12)
         clayout.setContentsMargins(0, 0, 0, 0)
 
-        # ── Card: Auto-start (highest priority) ───────────────────
-        card0 = self._make_card("开机自启 (最高优先级)")
-        auto_layout = QVBoxLayout()
+        # ═══════════════════════════════════════════════════════════════
+        # Card 0: Auto-start (highest priority)
+        # ═══════════════════════════════════════════════════════════════
+        card0, c0 = self._make_card("开机自启 — 最高优先级")
+
         auto_row = QHBoxLayout()
         self._auto_start_cb = QCheckBox("随 Windows 自动启动 SmartRing")
         self._auto_start_cb.setToolTip(
@@ -1086,75 +1235,127 @@ class SettingsDialog(QWidget):
             "此设置为最高优先级，建议保持开启以确保随时可用。"
         )
         self._auto_start_cb.setStyleSheet(
-            "QCheckBox { font-size: 15px; font-weight: bold; color: #e0e0e0; spacing: 10px; }"
+            "QCheckBox { font-size: 15px; font-weight: bold; color: #f0f0f0; spacing: 10px; }"
             "QCheckBox::indicator { width: 22px; height: 22px; }"
         )
         auto_row.addWidget(self._auto_start_cb)
         auto_row.addStretch()
-        auto_layout.addLayout(auto_row)
+        c0.addLayout(auto_row)
+
         auto_desc = QLabel(
             "启动项注册在 Windows 启动文件夹中，可通过任务管理器的「启动」选项卡管理。"
         )
-        auto_desc.setStyleSheet("color: #999; font-size: 11px; margin-left: 32px;")
+        auto_desc.setStyleSheet("color: #999; font-size: 11px; padding-left: 32px;")
         auto_desc.setWordWrap(True)
-        auto_layout.addWidget(auto_desc)
-        card0.setLayout(auto_layout)
+        c0.addWidget(auto_desc)
+
         clayout.addWidget(card0)
 
-        # ── Card: Hotkey & Mode ──────────────────────────────────────
-        card1 = self._make_card("快捷键设置")
-        grid1 = QGridLayout()
-        grid1.setSpacing(10)
-        grid1.addWidget(QLabel("快捷键组合:"), 0, 0)
+        # ═══════════════════════════════════════════════════════════════
+        # Card 1: Hotkey & Trigger Mode
+        # ═══════════════════════════════════════════════════════════════
+        card1, c1 = self._make_card("快捷键与触发模式")
+
+        hotkey_grid = QGridLayout()
+        hotkey_grid.setSpacing(10)
+
+        # Left column: hotkey capture + keyboard visual
+        hotkey_left = QVBoxLayout()
+        hotkey_left.setSpacing(8)
+
+        # Hotkey capture row
+        hk_row = QHBoxLayout()
+        hk_row.addWidget(QLabel("快捷键组合:"))
         self._hotkey_edit = QLineEdit()
         self._hotkey_edit.setPlaceholderText("例如: f12  /  ctrl+f12  /  alt+shift+a")
         self._hotkey_edit.setMinimumWidth(200)
-        grid1.addWidget(self._hotkey_edit, 0, 1)
+        self._hotkey_edit.setStyleSheet(
+            "QLineEdit { font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; }"
+        )
+        self._hotkey_edit.textChanged.connect(
+            lambda t: self._keyboard_widget.set_hotkey(t)
+        )
+        hk_row.addWidget(self._hotkey_edit, stretch=1)
+        hotkey_left.addLayout(hk_row)
 
-        grid1.addWidget(QLabel("触发模式:"), 0, 2)
-        self._mode_combo = QLineEdit()
-        self._mode_combo.setPlaceholderText("hold 或 toggle")
-        self._mode_combo.setMaximumWidth(100)
-        self._mode_combo.setToolTip("hold = 按住唤出, 松开启动\n"
-                                    "toggle = 按一下切换显示/隐藏")
-        grid1.addWidget(self._mode_combo, 0, 3)
+        # Visual keyboard mockup
+        self._keyboard_widget = _KeyboardVisual()
+        hotkey_left.addWidget(self._keyboard_widget)
 
-        # Show labels checkbox
-        grid1.addWidget(QLabel("显示标签:"), 1, 0)
+        hotkey_grid.addLayout(hotkey_left, 0, 0, 2, 1)
+
+        # Right column: mode + show labels
+        mode_group = QVBoxLayout()
+        mode_group.setSpacing(12)
+
+        # Trigger mode as dropdown
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(QLabel("触发模式:"))
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItem("Hold — 按住唤出，松开启动", "hold")
+        self._mode_combo.addItem("Toggle — 按一下显示，再按隐藏", "toggle")
+        self._mode_combo.setMinimumWidth(260)
+        self._mode_combo.setStyleSheet(
+            "QComboBox { background: #1e1e22; border: 1px solid #444; border-radius: 4px; "
+            "padding: 6px 10px; color: #e0e0e0; font-size: 13px; }"
+            "QComboBox:hover { border-color: #0078D4; }"
+            "QComboBox QAbstractItemView { background: #2b2b30; color: #e0e0e0; "
+            "selection-background-color: #0078D4; border: 1px solid #444; }"
+        )
+        mode_row.addWidget(self._mode_combo)
+        mode_row.addStretch()
+        mode_group.addLayout(mode_row)
+
+        # Show labels
         self._show_labels_cb = QCheckBox("在圆环中显示应用名称")
         self._show_labels_cb.setToolTip("取消勾选则圆环中只显示图标，不显示应用名")
-        grid1.addWidget(self._show_labels_cb, 1, 1, 1, 4)
+        self._show_labels_cb.setStyleSheet("QCheckBox { color: #d0d0d5; font-size: 13px; }")
+        mode_group.addWidget(self._show_labels_cb)
 
-        grid1.setColumnStretch(1, 2)
-        card1.setLayout(grid1)
+        mode_group.addStretch()
+        hotkey_grid.addLayout(mode_group, 0, 1)
+
+        hotkey_grid.setColumnStretch(0, 3)
+        hotkey_grid.setColumnStretch(1, 1)
+        c1.addLayout(hotkey_grid)
+
         clayout.addWidget(card1)
 
-        # ── Card: Appearance (with live preview) ──────────────────────
-        card2 = self._make_card("外观设置")
-        app_layout = QHBoxLayout()
-        app_layout.setSpacing(16)
+        # ═══════════════════════════════════════════════════════════════
+        # Card 2: Appearance
+        # ═══════════════════════════════════════════════════════════════
+        card2, c2 = self._make_card("外观设置")
 
-        # LEFT — live ring preview
+        app_row = QHBoxLayout()
+        app_row.setSpacing(20)
+
+        # LEFT — live ring preview (larger)
+        preview_container = QFrame()
+        preview_container.setStyleSheet("QFrame { background: #1a1a1e; border-radius: 8px; }")
+        preview_layout = QVBoxLayout(preview_container)
         self._settings_preview = RingPreview(
             ring_radius=self._config.ring_radius,
             center_radius=self._config.center_radius,
             icon_size=self._config.icon_size,
             accent_color=self._config.accent_color,
         )
-        app_layout.addWidget(self._settings_preview)
+        preview_layout.addWidget(self._settings_preview, alignment=Qt.AlignCenter)
+        app_row.addWidget(preview_container)
 
         # RIGHT — controls
         ctrls = QVBoxLayout()
-        ctrls.setSpacing(8)
+        ctrls.setSpacing(10)
 
         # Accent colour
+        color_label = QLabel("主题色:")
+        color_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        ctrls.addWidget(color_label)
         color_row = QHBoxLayout()
-        color_row.addWidget(QLabel("主题色:"))
         self._color_swatch = QLabel()
-        self._color_swatch.setFixedSize(28, 28)
+        self._color_swatch.setFixedSize(32, 32)
         self._color_swatch.setStyleSheet(
             f"background-color: {self._config.accent_color}; "
-            "border-radius: 5px; border: 1px solid #555;"
+            "border-radius: 6px; border: 2px solid #555;"
         )
         color_row.addWidget(self._color_swatch)
         self._color_edit = QLineEdit(self._config.accent_color)
@@ -1167,42 +1368,49 @@ class SettingsDialog(QWidget):
         color_row.addStretch()
         ctrls.addLayout(color_row)
 
-        # Ring sizes with SpinBox +/- buttons and real-time preview
+        ctrls.addSpacing(4)
+
+        # Size controls
         def _settings_update_preview(*args):
             rr = self._ring_spin.value()
             cr = self._center_spin.value()
             sz = self._icon_spin.value()
             acc = self._color_edit.text().strip() or "#0078D4"
 
-            # Dynamically clamp center_radius < ring_radius (leave at least 20px segment)
             max_center = max(20, rr - 20)
             self._center_spin.setMaximum(max_center)
-            # Dynamically clamp icon_size <= segment width
             max_icon = max(16, rr - self._center_spin.value())
             self._icon_spin.setMaximum(max_icon)
 
             if hasattr(self, '_settings_preview'):
                 self._settings_preview.set_params(rr, cr, sz, acc)
 
+        size_label = QLabel("圆环尺寸:")
+        size_label.setStyleSheet("font-weight: bold; color: #ccc;")
+        ctrls.addWidget(size_label)
+
         size_grid = QGridLayout()
-        size_grid.setSpacing(6)
+        size_grid.setSpacing(8)
         size_grid.addWidget(QLabel("外环半径:"), 0, 0)
         self._ring_spin = SpinBox(value=self._config.ring_radius, min_val=80, max_val=500, step=5)
         self._ring_spin.set_theme("dark")
         self._ring_spin.textChanged.connect(_settings_update_preview)
         size_grid.addWidget(self._ring_spin, 0, 1)
+        size_grid.addWidget(QLabel("px"), 0, 2)
 
         size_grid.addWidget(QLabel("中心半径:"), 1, 0)
         self._center_spin = SpinBox(value=self._config.center_radius, min_val=20, max_val=250, step=2)
         self._center_spin.set_theme("dark")
         self._center_spin.textChanged.connect(_settings_update_preview)
         size_grid.addWidget(self._center_spin, 1, 1)
+        size_grid.addWidget(QLabel("px"), 1, 2)
 
         size_grid.addWidget(QLabel("图标大小:"), 2, 0)
         self._icon_spin = SpinBox(value=self._config.icon_size, min_val=16, max_val=96, step=2)
         self._icon_spin.set_theme("dark")
         self._icon_spin.textChanged.connect(_settings_update_preview)
         size_grid.addWidget(self._icon_spin, 2, 1)
+        size_grid.addWidget(QLabel("px"), 2, 2)
 
         size_grid.addWidget(QLabel("动画时长:"), 3, 0)
         self._anim_edit = QLineEdit(str(self._config.animation_duration))
@@ -1212,55 +1420,68 @@ class SettingsDialog(QWidget):
 
         ctrls.addLayout(size_grid)
         ctrls.addStretch()
-        app_layout.addLayout(ctrls)
+        app_row.addLayout(ctrls)
 
-        card2.setLayout(app_layout)
+        c2.addLayout(app_row)
         clayout.addWidget(card2)
 
-        # ── Card: App list ───────────────────────────────────────────
-        card3 = self._make_card("应用程序列表")
-        app_outer = QVBoxLayout()
-        app_outer.setSpacing(6)
+        # ═══════════════════════════════════════════════════════════════
+        # Card 3: App list (expanded)
+        # ═══════════════════════════════════════════════════════════════
+        card3, c3 = self._make_card("应用程序列表")
 
         # Header
         hdr = QHBoxLayout()
-        hdr.addWidget(QLabel("<i>名称、路径 — 路径支持 .exe / .lnk 或任意文件</i>"))
+        hdr.addWidget(QLabel("名称、路径 — 支持 .exe / .lnk 或任意文件"))
         hdr.addStretch()
-        add_btn = QPushButton("＋ 添加应用")
+        add_btn = QPushButton("+ 添加应用")
         add_btn.setStyleSheet(
             "QPushButton { background-color: #1a6d34; color: white; "
-            "border-radius: 4px; padding: 5px 14px; }"
+            "border-radius: 4px; padding: 6px 16px; font-weight: bold; }"
             "QPushButton:hover { background-color: #228b41; }"
         )
         add_btn.clicked.connect(lambda: self._add_app_row())
         hdr.addWidget(add_btn)
-        app_outer.addLayout(hdr)
+        c3.addLayout(hdr)
 
-        # Scrollable app rows
+        # Scrollable app rows — generous height, no cap
         app_scroll = QScrollArea()
         app_scroll.setWidgetResizable(True)
         app_scroll.setFrameShape(QFrame.NoFrame)
-        app_scroll.setMaximumHeight(280)
+        app_scroll.setMinimumHeight(200)
         app_scroll.setStyleSheet("QScrollArea { background: #1e1e22; border-radius: 6px; }")
         self._app_container = QWidget()
         self._app_container.setStyleSheet("background: transparent;")
         self._app_layout = QVBoxLayout(self._app_container)
-        self._app_layout.setSpacing(4)
-        self._app_layout.setContentsMargins(4, 4, 4, 4)
+        self._app_layout.setSpacing(5)
+        self._app_layout.setContentsMargins(6, 6, 6, 6)
         self._app_layout.addStretch()
         app_scroll.setWidget(self._app_container)
-        app_outer.addWidget(app_scroll)
+        c3.addWidget(app_scroll, stretch=1)
 
-        card3.setLayout(app_outer)
-        clayout.addWidget(card3, stretch=1)
+        clayout.addWidget(card3, stretch=2)
 
         scroll.setWidget(content)
         outer.addWidget(scroll, stretch=1)
 
-        # ── Bottom buttons ───────────────────────────────────────────
-        outer.addSpacing(12)
+        # ═══════════════════════════════════════════════════════════════
+        # Bottom buttons
+        # ═══════════════════════════════════════════════════════════════
+        outer.addSpacing(10)
         btn_row = QHBoxLayout()
         btn_row.addStretch()
+
+        preview_btn = QPushButton("预览圆环")
+        preview_btn.setMinimumWidth(100)
+        preview_btn.setStyleSheet(
+            "QPushButton { background-color: #555560; color: #e0e0e0; "
+            "border-radius: 6px; padding: 8px 18px; }"
+            "QPushButton:hover { background-color: #666670; }"
+        )
+        preview_btn.clicked.connect(self._preview_ring_live)
+        btn_row.addWidget(preview_btn)
+
+        btn_row.addSpacing(8)
 
         save_btn = QPushButton("保存设置")
         save_btn.setDefault(True)
@@ -1280,7 +1501,7 @@ class SettingsDialog(QWidget):
 
         outer.addLayout(btn_row)
 
-        # Apply dark theme to the dialog
+        # Apply dark theme
         self.setStyleSheet("""
             QWidget {
                 background-color: #2b2b30;
@@ -1325,17 +1546,14 @@ class SettingsDialog(QWidget):
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
                 height: 0px;
             }
+            QComboBox {
+                background-color: #1e1e22;
+                border: 1px solid #444;
+                border-radius: 4px;
+                padding: 5px 8px;
+                color: #e0e0e0;
+            }
         """)
-
-    def _make_card(self, title: str) -> QFrame:
-        """Create a styled card frame with a title."""
-        card = QFrame()
-        card.setStyleSheet(
-            "QFrame { background-color: #222228; border: 1px solid #3a3a42; "
-            "border-radius: 10px; padding: 14px; }"
-        )
-        # We'll set the layout externally — just return the frame
-        return card
 
     def _add_app_row(self, name: str = "", path: str = "", args: str = "") -> None:
         row_widget = QWidget()
@@ -1437,7 +1655,10 @@ class SettingsDialog(QWidget):
 
     def _load(self) -> None:
         self._hotkey_edit.setText(self._config.hotkey)
-        self._mode_combo.setText(self._config.mode)
+        # Set combo box to match current mode
+        mode_idx = self._mode_combo.findData(self._config.mode)
+        if mode_idx >= 0:
+            self._mode_combo.setCurrentIndex(mode_idx)
         self._auto_start_cb.setChecked(self._config.auto_start)
         self._show_labels_cb.setChecked(self._config.show_labels)
         self._ring_spin.setText(str(self._config.ring_radius))
@@ -1445,6 +1666,9 @@ class SettingsDialog(QWidget):
         self._icon_spin.setText(str(self._config.icon_size))
         self._anim_edit.setText(str(self._config.animation_duration))
         self._color_edit.setText(self._config.accent_color)
+        # Update keyboard visual
+        if hasattr(self, '_keyboard_widget'):
+            self._keyboard_widget.set_hotkey(self._config.hotkey)
 
         for app in self._config.apps:
             self._add_app_row(app.get("name", ""), app.get("path", ""), app.get("args", ""))
@@ -1492,7 +1716,7 @@ class SettingsDialog(QWidget):
             return
 
         self._config.data["hotkey"] = hotkey
-        self._config.data["mode"] = self._mode_combo.text().strip() or "hold"
+        self._config.data["mode"] = self._mode_combo.currentData() or "hold"
         self._config.data["accent_color"] = self._color_edit.text().strip()
         self._config.data["auto_start"] = self._auto_start_cb.isChecked()
         self._config.data["show_labels"] = self._show_labels_cb.isChecked()
@@ -1524,8 +1748,65 @@ class SettingsDialog(QWidget):
         set_auto_start(auto_start)
 
         self.config_saved.emit()
-        QMessageBox.information(self, "已保存", "配置已保存，快捷键已重新加载。")
-        self.close()
+
+        # Ask whether to preview the ring live
+        reply = QMessageBox.question(
+            self, "保存成功",
+            "配置已保存，快捷键已重新加载。\n\n是否立即预览环形菜单效果？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
+        )
+        if reply == QMessageBox.Yes:
+            self._preview_ring_live()
+        else:
+            self.close()
+
+    def _preview_ring_live(self) -> None:
+        """Show the real ring overlay at cursor position for preview."""
+        # Hide settings dialog temporarily
+        self.hide()
+
+        apps = []
+        for name_e, path_e, args_e in self._app_rows:
+            n = name_e.text().strip()
+            p = path_e.text().strip()
+            if n and p:
+                apps.append({"name": n, "path": p, "args": args_e.text().strip(), "icon": ""})
+        if not apps:
+            apps = self._config.apps
+
+        ring_r = self._ring_spin.value()
+        center_r = self._center_spin.value()
+        icon_sz = self._icon_spin.value()
+        try:
+            anim_ms = int(self._anim_edit.text() or "220")
+        except ValueError:
+            anim_ms = 220
+        accent = self._color_edit.text().strip() or "#0078D4"
+        show_labels = self._show_labels_cb.isChecked()
+
+        self._preview_ring = RingOverlay(
+            apps=apps,
+            ring_radius=ring_r,
+            center_radius=center_r,
+            icon_size=icon_sz,
+            accent_color=accent,
+            animation_duration=anim_ms,
+            show_labels=show_labels,
+        )
+        # On dismiss or click, re-show settings (preview only, no launch)
+        self._preview_ring.dismissed.connect(self._on_preview_dismissed)
+        self._preview_ring.app_launched.connect(lambda _idx: self._on_preview_dismissed())
+        self._preview_ring.show_at(QCursor.pos())
+
+    def _on_preview_dismissed(self) -> None:
+        """Re-show settings dialog after preview ring is dismissed."""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        if self._preview_ring:
+            self._preview_ring.deleteLater()
+            self._preview_ring = None
 
 
 # =============================================================================
@@ -2652,6 +2933,15 @@ class SmartRingApp(QObject):
             self._open_settings()
 
     def _open_settings(self) -> None:
+        # Prevent duplicate settings windows
+        if hasattr(self, '_settings_dlg') and self._settings_dlg is not None:
+            try:
+                if self._settings_dlg.isVisible():
+                    self._settings_dlg.raise_()
+                    self._settings_dlg.activateWindow()
+                    return
+            except RuntimeError:
+                pass  # underlying C++ object was deleted
         dlg = SettingsDialog(self._config)
         self._settings_dlg = dlg
         dlg.config_saved.connect(self._on_config_saved)

@@ -188,5 +188,6 @@ SmartRing 是独立项目，**与 Logitech International S.A. 及其子公司无
 
 ## Links / 链接
 
+- [Website / 官网](https://chowlan233.github.io/smartring/)
 - [Releases / 下载](https://github.com/CHOWLAN233/smartring/releases)
 - [License](LICENSE) — MIT

@@ -39,18 +39,19 @@ Download `SmartRing.exe` from [Releases](https://github.com/CHOWLAN233/smartring
 
 ```bash
 pip install -r requirements.txt
+python rebuild.py              # One-click build & launch
+# Or run directly:
 pythonw SmartRing.pyw          # No console window (recommended)
 python smartring.py            # With console window
-# Or double-click run.bat
 ```
 
 ### Build EXE
 
 ```bash
-# Double-click build_exe.bat
+python rebuild.py exe          # Build EXE + sync config + launch
 # Or manually:
 pip install pyinstaller
-pyinstaller SmartRing.spec --clean --noconfirm
+pyinstaller SmartRing.spec --noconfirm
 # Output: dist\SmartRing.exe
 ```
 
@@ -129,18 +130,19 @@ SmartRing is an independent project and is **not affiliated with, endorsed by, o
 
 ```bash
 pip install -r requirements.txt
+python rebuild.py              # 一键构建 & 启动
+# 或直接运行：
 pythonw SmartRing.pyw          # 无控制台窗口（推荐）
 python smartring.py            # 带控制台窗口
-# 或双击 run.bat
 ```
 
 ### 构建 EXE
 
 ```bash
-# 双击 build_exe.bat
+python rebuild.py exe          # 构建 EXE + 同步配置 + 启动
 # 或手动：
 pip install pyinstaller
-pyinstaller SmartRing.spec --clean --noconfirm
+pyinstaller SmartRing.spec --noconfirm
 # 输出：dist\SmartRing.exe
 ```
 
@@ -186,6 +188,5 @@ SmartRing 是独立项目，**与 Logitech International S.A. 及其子公司无
 
 ## Links / 链接
 
-- Website / 官网：[chowlan233.github.io/smartring](https://chowlan233.github.io/smartring/)
 - [Releases / 下载](https://github.com/CHOWLAN233/smartring/releases)
 - [License](LICENSE) — MIT

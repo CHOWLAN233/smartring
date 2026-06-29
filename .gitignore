@@ -3,7 +3,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
 
 # Virtual environments
 venv/
@@ -21,16 +20,14 @@ env/
 Thumbs.db
 Desktop.ini
 
-# Build outputs
+# Build outputs (PyInstaller)
 build/
 dist/
 *.exe
 *.ico
-__pycache__/
-*.pyc
 
 # Config is user-specific — auto-generated on first run
 config.json
 
-# Claude
+# Claude Code
 .claude/

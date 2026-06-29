@@ -14,7 +14,7 @@ this script. Edit it by hand or right-click the tray icon → Settings.
 
 Run without a console window:
     pythonw SmartRing.pyw
-Or double-click SmartRing.pyw / run.bat in Explorer.
+Or double-click rebuild.py / SmartRing.pyw in Explorer.
 """
 
 from __future__ import annotations
@@ -123,8 +123,32 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 # Helpers
 # =============================================================================
 
+# Registry key for startup (shows in Task Manager's Startup tab)
+_STARTUP_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_STARTUP_REG_NAME = "SmartRing"
+
+
+def _startup_command() -> str:
+    """Build the command line that Windows should run at startup."""
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller EXE — launch the EXE directly
+        exe = sys.executable
+        # Quote the path if it contains spaces
+        if " " in exe:
+            exe = f'"{exe}"'
+        return exe
+    else:
+        # Running from source — launch SmartRing.pyw with pythonw.exe
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SmartRing.pyw")
+        pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        if not os.path.isfile(pythonw):
+            pythonw = "pythonw"  # fallback
+        return f'"{pythonw}" "{script}"'
+
+
 def startup_shortcut_path() -> str:
-    """Path to the Windows Startup folder shortcut for SmartRing."""
+    """Path to the legacy Windows Startup folder shortcut for SmartRing.
+    Kept for cleanup of old installations — no longer used for new setups."""
     startup_dir = os.path.join(
         os.environ.get("APPDATA", ""),
         "Microsoft", "Windows", "Start Menu", "Programs", "Startup",
@@ -168,50 +192,50 @@ def remove_desktop_shortcut() -> bool:
 
 def set_auto_start(enabled: bool) -> bool:
     """
-    Create or remove the Windows startup shortcut.
+    Enable or disable launch at Windows startup via the Registry.
+
+    Uses HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run so that
+    SmartRing appears in Task Manager's Startup tab like a regular app.
+
+    Also cleans up any legacy VBS script in the Startup folder.
     Returns True on success.
     """
-    spath = startup_shortcut_path()
     try:
-        if enabled:
-            if getattr(sys, 'frozen', False):
-                # Running as PyInstaller EXE — launch the EXE directly
-                target = sys.executable  # sys.executable IS the EXE itself
-            else:
-                # Running from source — launch SmartRing.pyw with pythonw.exe
-                script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SmartRing.pyw")
-                # Use the full path to pythonw.exe to ensure it's found even when
-                # PATH is not fully set up at startup (e.g. early login stage).
-                pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
-                if not os.path.isfile(pythonw):
-                    pythonw = "pythonw"  # fallback
-                target = f'"{pythonw}" "{script}"'
+        import winreg
 
-            # Build VBS with proper quote escaping: double-quote → "" in VBS
-            vbs_target = target.replace('"', '""')
-            # Set working directory so the script can find its files
-            work_dir = os.path.dirname(os.path.abspath(
-                sys.executable if getattr(sys, 'frozen', False) else __file__
-            )).replace('"', '""')
-            vbs_content = (
-                'Set WshShell = CreateObject("WScript.Shell")\r\n'
-                f'WshShell.CurrentDirectory = "{work_dir}"\r\n'
-                f'WshShell.Run "{vbs_target}", 0, False\r\n'
-            )
-            os.makedirs(os.path.dirname(spath), exist_ok=True)
-            with open(spath, "w") as f:
-                f.write(vbs_content)
+        # Clean up legacy VBS startup shortcut if it exists
+        legacy = startup_shortcut_path()
+        if os.path.isfile(legacy):
+            try:
+                os.remove(legacy)
+            except OSError:
+                pass
+
+        if enabled:
+            command = _startup_command()
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY) as key:
+                winreg.SetValueEx(key, _STARTUP_REG_NAME, 0, winreg.REG_SZ, command)
         else:
-            if os.path.isfile(spath):
-                os.remove(spath)
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY, 0,
+                                    winreg.KEY_SET_VALUE) as key:
+                    winreg.DeleteValue(key, _STARTUP_REG_NAME)
+            except FileNotFoundError:
+                pass  # Value doesn't exist — nothing to remove
         return True
     except Exception:
         return False
 
 
 def get_auto_start() -> bool:
-    """Check if the startup shortcut exists."""
-    return os.path.isfile(startup_shortcut_path())
+    """Check if SmartRing is registered for Windows startup via the Registry."""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_REG_KEY) as key:
+            winreg.QueryValueEx(key, _STARTUP_REG_NAME)
+        return True
+    except (FileNotFoundError, OSError):
+        return False
 
 
 def config_path() -> str:
@@ -309,8 +333,16 @@ def parse_hotkey(hotkey_str: str) -> Tuple[set, object]:
 def resolve_app_path(app_path: str) -> str:
     """
     Resolve a possibly-short app name (e.g. 'notepad.exe') to a full path.
+    Handles common user mistakes like extra quotes around paths.
     Returns the original string if no full path can be found.
     """
+    # Strip surrounding quotes (common mistake when pasting paths)
+    app_path = app_path.strip()
+    if app_path.startswith('"') and app_path.endswith('"'):
+        app_path = app_path[1:-1]
+    if app_path.startswith("'") and app_path.endswith("'"):
+        app_path = app_path[1:-1]
+
     # Already a full path?
     if os.path.isfile(app_path):
         return os.path.abspath(app_path)
@@ -344,18 +376,109 @@ def resolve_app_path(app_path: str) -> str:
     return app_path
 
 
+def _find_icon_in_folder(folder: str, exe_basename: str = "") -> Optional[str]:
+    """
+    Scan a folder for likely icon files.
+
+    Priority:
+    1. .ico files whose name matches the exe basename (e.g. chrome.ico)
+    2. .ico files with common names (app.ico, icon.ico, logo.ico, main.ico)
+    3. Any other .ico file in the folder
+    4. .png files matching the exe basename or common names
+    5. Any .png file — but only if NO .ico was found at all
+    6. .svg files — last resort
+
+    Returns the path to the best icon file found, or None.
+    """
+    if not folder or not os.path.isdir(folder):
+        return None
+
+    # Collect all candidate files
+    try:
+        files = os.listdir(folder)
+    except OSError:
+        return None
+
+    # Normalise exe basename for matching
+    name_no_ext = os.path.splitext(exe_basename.lower())[0] if exe_basename else ""
+
+    common_names = {"app", "icon", "logo", "main", "application",
+                    "tray", "favicon", "appicon", "launcher"}
+
+    icos = []
+    pngs = []
+    svgs = []
+
+    for f in files:
+        ext = os.path.splitext(f)[1].lower()
+        full = os.path.join(folder, f)
+        if not os.path.isfile(full):
+            continue
+        if ext == ".ico":
+            icos.append(f)
+        elif ext == ".png":
+            pngs.append(f)
+        elif ext == ".svg":
+            svgs.append(f)
+
+    def _score(name: str) -> int:
+        """Lower score = higher priority."""
+        n = os.path.splitext(name)[0].lower()
+        if name_no_ext and n == name_no_ext:
+            return 0   # exact match with exe name
+        if name_no_ext and n.startswith(name_no_ext):
+            return 1   # starts with exe name
+        if n in common_names:
+            return 2   # common icon name
+        return 3       # any other
+
+    # Pick best .ico
+    if icos:
+        icos.sort(key=_score)
+        return os.path.join(folder, icos[0])
+
+    # Pick best .png (only if no .ico)
+    if pngs:
+        pngs.sort(key=_score)
+        return os.path.join(folder, pngs[0])
+
+    # Last resort: .svg
+    if svgs:
+        svgs.sort(key=_score)
+        return os.path.join(folder, svgs[0])
+
+    return None
+
+
 def extract_icon(exe_path: str, size: int = 48) -> QIcon:
     """
-    Extract the system icon for an executable on Windows.
-    Resolves short names to full paths before extraction.
+    Extract the best available icon for an application.
+
+    Strategy (in order):
+    1. Browse the app's installation folder for .ico / .png / .svg files
+    2. Use QFileIconProvider to extract the icon embedded in the .exe
+    3. Fall back to the letter-icon generator
+
     Returns an empty QIcon on failure (caller should use fallback).
     """
     # Resolve to full path first
     full_path = resolve_app_path(exe_path)
 
-    # Method 1: QFileIconProvider (works for most .exe / .lnk)
+    # Method 1: Browse the app's folder for icon files
     try:
-        provider = QFileIconProvider()
+        folder = os.path.dirname(full_path)
+        basename = os.path.basename(full_path)
+        icon_file = _find_icon_in_folder(folder, basename)
+        if icon_file:
+            icon = QIcon(icon_file)
+            if not icon.isNull():
+                return icon
+    except Exception:
+        pass
+
+    # Method 2: QFileIconProvider (extracts from .exe / .lnk)
+    provider = QFileIconProvider()
+    try:
         info = QFileInfo(full_path)
         if info.exists():
             icon = provider.icon(info)
@@ -364,7 +487,7 @@ def extract_icon(exe_path: str, size: int = 48) -> QIcon:
     except Exception:
         pass
 
-    # Method 2: try the original path as fallback
+    # Method 3: try the original path as fallback
     if full_path != exe_path:
         try:
             info2 = QFileInfo(exe_path)
@@ -1073,9 +1196,19 @@ class RingOverlay(QWidget):
         else:
             font = QFont("Microsoft YaHei", 10, QFont.Bold)
             painter.setFont(font)
+            # Show app name when highlighted, otherwise show APP_NAME
+            if hi >= 0 and hi < n:
+                app_name = self._apps[hi]["name"]
+                # Elide long names so they fit inside the hub
+                fm = QFontMetrics(font)
+                max_w = self._center_r * 2 - 16
+                display_name = fm.elidedText(app_name, Qt.ElideRight, max_w)
+                painter.setPen(self._accent)  # accent colour for app name
+            else:
+                display_name = APP_NAME
             painter.drawText(
                 QRect(cx - self._center_r, cy - 8, self._center_r * 2, 16),
-                Qt.AlignCenter, APP_NAME,
+                Qt.AlignCenter, display_name,
             )
 
         # ── 6. App icons & labels ────────────────────────────────────
@@ -2192,24 +2325,13 @@ class SettingsDialog(QWidget):
         set_auto_start(auto_start)
 
         self.config_saved.emit()
+        self.close()
 
-        # Ask whether to preview the ring live
-        reply = QMessageBox.question(
-            self, "保存成功",
-            "配置已保存，快捷键已重新加载。\n\n是否立即预览环形菜单效果？",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes,
-        )
-        if reply == QMessageBox.Yes:
-            self._preview_ring_live(then_close=True)
-        else:
-            self.close()
-
-    def _preview_ring_live(self, then_close: bool = False) -> None:
+    def _preview_ring_live(self) -> None:
         """Show the real ring overlay in a centered popup window for preview.
 
-        If then_close is True, close settings when the preview is dismissed
-        (used after save). Otherwise re-show settings (used from preview button).
+        Hides the settings dialog while previewing; re-shows it when the
+        preview is dismissed.
         """
         self.hide()
 
@@ -2247,12 +2369,8 @@ class SettingsDialog(QWidget):
 
         # Create backdrop popup, then position ring inside it
         self._preview_backdrop = PreviewBackdrop(preview_ring, ring_r)
-        if then_close:
-            # From save → close everything when dismissed
-            self._preview_backdrop.dismissed.connect(self.close)
-        else:
-            # From preview button → re-show settings when dismissed
-            self._preview_backdrop.dismissed.connect(self._on_preview_dismissed)
+        # Re-show settings when preview is dismissed
+        self._preview_backdrop.dismissed.connect(self._on_preview_dismissed)
 
         # Position ring at the backdrop's internal ring center
         ring_global = self._preview_backdrop.mapToGlobal(
